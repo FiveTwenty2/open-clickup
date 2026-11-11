@@ -287,7 +287,7 @@ function GanttRow({
         className="sticky left-0 z-10 flex shrink-0 items-center gap-2 border-r border-cu-border bg-cu-bg px-3"
         style={{ width: NAME_W }}
       >
-        <StatusCircle status={task.status} size={14} />
+        {task.milestone ? <span aria-label="Milestone" role="img" className="text-sm text-cu-purple">◆</span> : <StatusCircle status={task.status} size={14} />}
         <button onClick={() => onOpenTask(task.id)} className="truncate text-left text-[13px] hover:text-cu-purple">
           {task.name}
         </button>

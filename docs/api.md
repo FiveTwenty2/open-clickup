@@ -64,3 +64,13 @@ These endpoints use the signed-in browser session.
 - `POST /api/hierarchy/reorder` accepts `source` and `target` objects with `kind` (`space`, `folder`, or `list`) and `id`, plus `placement` (`before`, `after`, or `inside`). Reorder spaces within the workspace, reorder folders within a space, or move lists into a space or folder.
 - `GET /api/list-templates` lists workspace templates. `POST` creates one with `sourceListId`, `name`, and optional `includeTasks`. `PATCH` accepts the same fields plus `id` and replaces that template.
 - `PUT /api/list-templates` creates a new list from `templateId`, `name`, `spaceId`, and optional `folderId`. Options are `includeTasks` (default true), `includeDates`, and `includeAutomations` (both default false).
+
+
+## Forms, relationships, and workload
+
+- `GET|POST|PATCH|DELETE /api/lists/:id/forms` manages intake forms for editors. Forms have a title, description, publish flag, and an array of questions. Each question has a UUID `id`, `label`, `type` (`text`, `paragraph`, `email`, or `choice`), `required`, and `options`. Updates and deletions specify the form `id`.
+- `GET /api/public/forms/:key` returns the published form. `POST` accepts `name` and `answers` keyed by question ID, and creates a task in the destination list. The response contains no task details.
+- `GET /api/tasks/:id/relationships` lists related tasks and links. `POST` accepts `{ "kind": "task", "otherId": "..." }` or `{ "kind": "link", "title": "...", "url": "https://..." }`. `DELETE` accepts `kind` and relationship `id`.
+- `GET /api/workspace/workload` takes ISO `from` and `to` timestamps (exclusive end, maximum eight days) and optional `listId`. It returns open scheduled tasks and their estimates and assignees for the period.
+
+Tasks accept an optional boolean `milestone` when created or updated.

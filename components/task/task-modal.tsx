@@ -13,6 +13,7 @@ import {
   Tag as TagIcon,
   Eye,
   Repeat,
+  Diamond,
   Plus,
   Pencil,
   Trash2,
@@ -41,6 +42,7 @@ import { CommentReactions } from "@/components/task/comment-reactions";
 import { TaskMenu } from "@/components/task/save-template";
 import { Attachments } from "@/components/task/attachments";
 import { TimeTracking } from "@/components/task/time-tracking";
+import { Relationships } from "@/components/task/relationships";
 import { Dependencies } from "@/components/task/dependencies";
 import { useWorkspace } from "@/components/workspace-context";
 import { format } from "date-fns";
@@ -128,6 +130,7 @@ export function TaskModal({
             <>
               {/* header */}
               <div className="flex items-center gap-2 border-b border-cu-border px-4 py-2.5">
+                {task.milestone && <span className="flex items-center gap-1 text-xs text-cu-purple"><Diamond className="h-3.5 w-3.5 fill-current" /> Milestone</span>}
                 <StatusControl
                   current={task.status}
                   statuses={task.list.statuses}
@@ -204,7 +207,8 @@ export function TaskModal({
                           onOpen={() => onOpenTask?.(sub.id)}
                         >
                         <div className="flex w-full items-center gap-2 border-b border-cu-border px-3 py-2 last:border-0 hover:bg-cu-hover">
-                          <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
+                          {task.milestone && <span className="flex items-center gap-1 text-xs text-cu-purple"><Diamond className="h-3.5 w-3.5 fill-current" /> Milestone</span>}
+                <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
                           <button onClick={() => onOpenTask?.(sub.id)} disabled={!onOpenTask} className="text-left text-[13px] hover:underline">{sub.name}</button>
                           {isClosed(sub) && <span className="text-xs text-cu-text-secondary">{sub.status.name}</span>}
                           <div className="ml-auto flex -space-x-1.5">
@@ -231,6 +235,7 @@ export function TaskModal({
                     onChange={invalidate}
                   />
 
+                  <Relationships key={taskId} taskId={taskId} />
                   <Dependencies
                     taskId={taskId}
                     blockedBy={task.blockedBy}
@@ -425,6 +430,10 @@ function activityText(
   const d = (a.data ?? {}) as Record<string, unknown>;
   const names = (ids: unknown) => (Array.isArray(ids) ? ids.map((id) => memberName(String(id))).join(", ") : "");
   switch (a.type) {
+    case "task_type_changed": return "changed the task type";
+    case "form_submitted": return "received a form submission";
+    case "relationship_added": return "added a relationship";
+    case "relationship_removed": return "removed a relationship";
     case "archived": return "archived this task";
     case "unarchived": return "unarchived this task";
     case "trashed": return "moved this task to Trash";

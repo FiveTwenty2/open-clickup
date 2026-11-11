@@ -8,7 +8,7 @@ import {
 import {
   DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent,
 } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Diamond, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TaskContextMenu } from "@/components/task/task-context-menu";
 import type { StatusModel, TaskWithRelations } from "@/lib/queries";
@@ -18,7 +18,7 @@ import { useWorkspace } from "@/components/workspace-context";
 
 const modes = { day: "Day", four: "4 days", week: "Week", month: "Month" } as const;
 type Mode = keyof typeof modes;
-export type CalendarTask = Pick<TaskWithRelations, "id" | "name" | "listId" | "parentId" | "startDate" | "dueDate" | "priority" | "archived"> & {
+export type CalendarTask = Pick<TaskWithRelations, "id" | "name" | "listId" | "parentId" | "startDate" | "dueDate" | "priority" | "archived" | "milestone"> & {
   status: Pick<TaskWithRelations["status"], "id" | "name" | "color" | "type">;
   assignees: { userId: string }[];
 };
@@ -253,7 +253,7 @@ function DraggableTask({ task, day, queue, canSchedule, showTime, onOpen, status
   return <TaskContextMenu task={task} statuses={statuses} onOpen={onOpen}><button ref={setNodeRef} {...listeners} {...attributes} onClick={onOpen}
     className={cn("relative flex w-full min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left text-xs", canSchedule && "touch-none cursor-grab", isDragging && "z-30 opacity-50")}
     style={{ backgroundColor: `${task.status.color}1f`, transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}>
-    <StatusCircle status={task.status} size={10} />
+    {task.milestone ? <Diamond role="img" aria-label="Milestone" className="h-3 w-3 shrink-0 fill-current" /> : <StatusCircle status={task.status} size={10} />}
     {showTime && timing && <span className="shrink-0 text-cu-text-secondary">{format(new Date(timing), "HH:mm")}</span>}
     <span className="truncate">{task.name}</span>
   </button></TaskContextMenu>;

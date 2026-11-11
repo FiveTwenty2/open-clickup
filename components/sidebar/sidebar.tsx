@@ -30,6 +30,7 @@ import {
   Target,
   ClipboardList,
   CalendarDays,
+  Gauge,
   Archive,
   MessageSquare,
 } from "lucide-react";
@@ -101,6 +102,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           onClick={() => router.push("/home")}
         />
         <InboxButton />
+        <NavItem icon={<Gauge className="h-4 w-4" />} label="Workload" active={pathname === "/workload"} onClick={() => router.push("/workload")} />
         <NavItem icon={<CalendarDays className="h-4 w-4" />} label="Calendar" active={pathname === "/calendar"} onClick={() => router.push("/calendar")} />
         {workspace.members.find((member) => member.userId === currentUser.id)?.role !== "GUEST" && (
           <NavItem icon={<MessageSquare className="h-4 w-4" />} label="Messages" active={pathname === "/messages"} onClick={() => router.push("/messages")} />

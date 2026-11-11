@@ -17,6 +17,7 @@ export async function createTask(input: {
   assigneeIds?: string[];
   createdById?: string;
   dueDate?: string;
+  milestone?: boolean;
 }) {
   // resolve status (default = first status of the list)
   const status = await prisma.status.findFirst({
@@ -49,6 +50,7 @@ export async function createTask(input: {
       completedAt: isCompletedStatus(status.type) ? new Date() : null,
       parentId: input.parentId ?? null,
       name: input.name,
+      milestone: input.milestone,
       priority: automated.priority ?? null,
       dueDate: automated.dueDate ? new Date(automated.dueDate) : null,
       position,
@@ -79,6 +81,7 @@ export type TaskPatch = {
   timeEstimate?: number | null;
   recurrence?: string | null;
   archived?: boolean;
+  milestone?: boolean;
   assigneeIds?: string[]; // full replacement set
   tagIds?: string[]; // full replacement set
   watcherIds?: string[]; // full replacement set
@@ -112,6 +115,7 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
   if (patch.timeEstimate !== undefined) data.timeEstimate = patch.timeEstimate;
   if (patch.recurrence !== undefined) data.recurrence = patch.recurrence || null;
   if (patch.archived !== undefined) data.archived = patch.archived;
+  if (patch.milestone !== undefined) data.milestone = patch.milestone;
   if (patch.startDate !== undefined)
     data.startDate = patch.startDate ? new Date(patch.startDate) : null;
   if (patch.dueDate !== undefined)
@@ -119,6 +123,9 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
 
   // collect activity-log entries for changes worth an audit trail
   const activityLog: { type: string; data: Record<string, unknown> }[] = [];
+  if (patch.milestone !== undefined && patch.milestone !== existing.milestone) {
+    activityLog.push({ type: "task_type_changed", data: { milestone: patch.milestone } });
+  }
   if (patch.archived !== undefined && patch.archived !== existing.archived) {
     activityLog.push({ type: patch.archived ? "archived" : "unarchived", data: {} });
   }

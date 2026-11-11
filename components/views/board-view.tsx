@@ -500,6 +500,7 @@ function Card({ task, overlay, statusControl }: { task: TaskWithRelations; overl
         <span className="mt-0.5">
           {statusControl ?? <StatusCircle status={task.status} size={14} />}
         </span>
+        {task.milestone && <span role="img" aria-label="Milestone" className="text-xs text-cu-purple">◆</span>}
         <span className="flex-1 text-[13px] leading-snug text-cu-text">{task.name}</span>
         <PriorityFlag priority={task.priority} />
       </div>

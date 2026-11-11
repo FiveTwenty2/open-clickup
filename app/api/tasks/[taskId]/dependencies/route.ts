@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireIntegrationAccess, requireTaskInWorkspace } from "@/lib/integration-access";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 
@@ -14,7 +14,7 @@ const schema = z.object({
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  await requireUser();
+  const { workspaceId } = await requireIntegrationAccess(req, true);
   const { type, otherTaskId } = await readJson(req, schema);
 
   if (otherTaskId === taskId) throw new ApiError(400, "A task can't depend on itself");
@@ -25,11 +25,9 @@ export const POST = route(async (req, { params }: Ctx) => {
   const blockedId = type === "waiting_on" ? taskId : otherTaskId;
 
   const [task, other] = await Promise.all([
-    prisma.task.findUnique({ where: { id: taskId }, select: { listId: true } }),
-    prisma.task.findUnique({ where: { id: otherTaskId }, select: { id: true } }),
+    requireTaskInWorkspace(taskId, workspaceId),
+    requireTaskInWorkspace(otherTaskId, workspaceId),
   ]);
-  if (!task) throw new ApiError(404, "Task not found");
-  if (!other) throw new ApiError(404, "Linked task not found");
 
   // reject the reverse edge (would create an immediate cycle)
   const reverse = await prisma.taskDependency.findUnique({
@@ -43,6 +41,6 @@ export const POST = route(async (req, { params }: Ctx) => {
   if (existing) throw new ApiError(409, "Dependency already exists");
 
   const dep = await prisma.taskDependency.create({ data: { blockerId, blockedId } });
-  publish({ type: "list", listId: task.listId });
+  for (const listId of new Set([task.listId, other.listId])) publish({ type: "list", listId });
   return NextResponse.json(dep, { status: 201 });
 });

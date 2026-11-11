@@ -261,6 +261,8 @@ export function ListPage({ listId }: { listId: string }) {
               >
                 Edit statuses
               </DropdownMenu.Item>
+              {canWrite && <DropdownMenu.Item onSelect={() => router.push(`/l/${listId}/forms`)}
+                className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">Intake forms</DropdownMenu.Item>}
               {canWrite && <DropdownMenu.Item onSelect={() => setListTemplate(true)}
                 className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">Save or update list template</DropdownMenu.Item>}
               <DropdownMenu.Item

@@ -187,6 +187,7 @@ function TableGroup({
                 <span onClick={(e) => e.stopPropagation()}>
                   <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
                 </span>
+                {task.milestone && <span role="img" aria-label="Milestone" className="text-xs text-cu-purple">◆</span>}
                 <span className="truncate text-[13px]">{task.name}</span>
               </Cell>
               <Cell onClick={(e) => e.stopPropagation()}>

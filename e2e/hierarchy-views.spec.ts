@@ -89,6 +89,8 @@ test("opens view options and task actions from all five list views", async ({ pa
 });
 
 test("creates a folder, moves a list, and creates a new list from an updated template", async ({ page }) => {
+  // Keep the native drag source and destination in view without auto-scrolling the sidebar.
+  await page.setViewportSize({ width: 1280, height: 1200 });
   const name = `Reusable process ${Date.now()}`;
   const source = await openList(page, name);
   const parent = await add(page, source.id, "Template parent");

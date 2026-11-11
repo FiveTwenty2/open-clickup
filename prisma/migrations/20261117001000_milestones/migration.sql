@@ -1,0 +1,1 @@
+ALTER TABLE "Task" ADD COLUMN "milestone" BOOLEAN NOT NULL DEFAULT false;

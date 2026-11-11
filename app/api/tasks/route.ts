@@ -12,6 +12,7 @@ const schema = z.object({
   priority: z.enum(["URGENT", "HIGH", "NORMAL", "LOW"]).nullish(),
   assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().datetime().optional(),
+  milestone: z.boolean().optional(),
 });
 
 export const POST = route(async (req) => {
@@ -28,6 +29,7 @@ export const POST = route(async (req) => {
     assigneeIds: body.assigneeIds ?? [],
     createdById: user.id,
     dueDate: body.dueDate,
+    milestone: body.milestone,
   });
   return NextResponse.json(task, { status: 201 });
 });

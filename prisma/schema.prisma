@@ -257,6 +257,7 @@ model Folder {
 }
 
 model List {
+  forms IntakeForm[]
   archivedAt DateTime?
   archivedBy String?
   automations TaskAutomation[]
@@ -336,6 +337,7 @@ enum Priority {
 }
 
 model Task {
+  milestone Boolean @default(false)
   deletedAt     DateTime?
   trashRootId   String?
   id           String    @id @default(cuid())
@@ -372,6 +374,9 @@ model Task {
   attachments       Attachment[]
   timeEntries       TimeEntry[]
   goals             GoalTask[]
+  relatedFrom TaskRelationship[] @relation("RelatedFrom")
+  relatedTo TaskRelationship[] @relation("RelatedTo")
+  resourceLinks TaskResourceLink[]
   blocking          TaskDependency[]   @relation("Blocking") // edges where this task blocks another
   blockedBy         TaskDependency[]   @relation("Blocked") // edges where this task waits on another
 
@@ -668,4 +673,39 @@ model TaskDependency {
   @@unique([blockerId, blockedId])
   @@index([blockerId])
   @@index([blockedId])
+}
+
+model IntakeForm {
+  id          String @id @default(cuid())
+  listId      String
+  shareKey    String @unique
+  title       String
+  description String @default("")
+  questions   Json
+  published   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  list        List @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([listId])
+}
+
+model TaskRelationship {
+  id        String @id @default(cuid())
+  leftId    String
+  rightId   String
+  left      Task @relation("RelatedFrom", fields: [leftId], references: [id], onDelete: Cascade)
+  right     Task @relation("RelatedTo", fields: [rightId], references: [id], onDelete: Cascade)
+
+  @@unique([leftId, rightId])
+  @@index([rightId])
+}
+
+model TaskResourceLink {
+  id     String @id @default(cuid())
+  taskId String
+  title  String
+  url    String
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, url])
 }

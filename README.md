@@ -47,6 +47,8 @@ Hierarchy, five views, custom fields, real-time collaboration and dark mode — 
 
 **API access** — create and revoke personal tokens from the profile menu. See [the API guide](docs/api.md) for supported requests and examples.
 
+**Forms and workload** — publish intake forms that create tasks in a list, link related tasks and external resources, and compare weekly estimates against capacity. See the [ClickUp compatibility audit](docs/clickup-compatibility.md).
+
 **Workspace tools** — All tasks gives you a shareable cross-list search with status, assignee, due date and list filters. Dashboards shows list progress, upcoming work and a downloadable time report. Use Docs for shared notes and Goals for numeric targets or progress linked to tasks.
 
 **Task recovery** — Archive hides a task from active lists. Trash preserves the deleted task and its subtask tree for restoration. Find both in **Archive and Trash** in the sidebar. Board, List and Table support bulk status, priority, assignment, due date, archive and Trash actions.

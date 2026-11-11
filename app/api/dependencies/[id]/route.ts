@@ -11,12 +11,12 @@ export const DELETE = route(async (_req, { params }: Ctx) => {
   const { workspaceId } = await requireRole("MEMBER");
 
   const dep = await prisma.taskDependency.findUnique({
-    where: { id, blocker: { deletedAt: null, list: { space: { workspaceId } } } },
-    include: { blocker: { select: { listId: true } } },
+    where: { id, blocker: { deletedAt: null, list: { space: { workspaceId } } }, blocked: { deletedAt: null, list: { space: { workspaceId } } } },
+    include: { blocker: { select: { listId: true } }, blocked: { select: { listId: true } } },
   });
   if (!dep) throw new ApiError(404, "Dependency not found");
 
   await prisma.taskDependency.delete({ where: { id } });
-  publish({ type: "list", listId: dep.blocker.listId });
+  for (const listId of new Set([dep.blocker.listId, dep.blocked.listId])) publish({ type: "list", listId });
   return NextResponse.json({ ok: true });
 });

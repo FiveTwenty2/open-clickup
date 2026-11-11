@@ -24,7 +24,7 @@ export async function snapshotList(workspaceId: string, listId: string, includeT
     orderBy: [{ position: "asc" }, { id: "asc" }],
     take: 1001,
     select: {
-      id: true, parentId: true, name: true, description: true, priority: true, statusId: true, position: true,
+      id: true, parentId: true, name: true, description: true, priority: true, milestone: true, statusId: true, position: true,
       startDate: true, dueDate: true, timeEstimate: true, recurrence: true,
       blocking: { select: { blockedId: true } },
       checklists: { select: { name: true, position: true, items: { select: { name: true, position: true } } } },
@@ -92,10 +92,10 @@ export async function createListFromTemplate(input: {
     const taskIds = new Map(tasks.map(({ id }) => [id, randomUUID()]));
     const statusTypes = new Map(snapshot.statuses.map(({ id, type }) => [id, type]));
     if (tasks.length) await tx.task.createMany({
-      data: tasks.map(({ id, parentId, startDate, dueDate, statusId, name, description, priority, position, timeEstimate, recurrence }) => ({
+      data: tasks.map(({ id, parentId, startDate, dueDate, statusId, name, description, priority, position, timeEstimate, recurrence, milestone }) => ({
         id: taskIds.get(id)!, listId: list.id, parentId: parentId ? taskIds.get(parentId) ?? null : null,
         statusId: statusIds.get(statusId) ?? statusIds.get(snapshot.statuses[0].id)!,
-        name, description, priority, position, timeEstimate, recurrence, createdById: input.actorId,
+        name, description, priority, position, timeEstimate, recurrence, milestone, createdById: input.actorId,
         completedAt: isCompletedStatus(statusTypes.get(statusId) ?? "") ? new Date() : null,
         startDate: input.includeDates ? startDate : null, dueDate: input.includeDates ? dueDate : null,
       })),

@@ -54,10 +54,12 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["list", event.listId] });
           qc.invalidateQueries({ queryKey: ["task-menu-statuses", event.listId] });
           qc.invalidateQueries({ queryKey: ["task"] });
+          qc.invalidateQueries({ queryKey: ["relationships"] });
           qc.invalidateQueries({ queryKey: ["my-tasks"] });
           qc.invalidateQueries({ queryKey: ["recovery"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           qc.invalidateQueries({ queryKey: ["workspace-calendar"] });
+          qc.invalidateQueries({ queryKey: ["workload"] });
           qc.invalidateQueries({ queryKey: ["workspace-tasks"] });
           qc.invalidateQueries({ queryKey: ["goals"] });
           qc.invalidateQueries({ queryKey: ["audit"] });
@@ -388,6 +390,7 @@ function applyOptimistic(task: TaskWithRelations, patch: TaskPatch): TaskWithRel
   return {
     ...task,
     name: patch.name ?? task.name,
+    milestone: patch.milestone ?? task.milestone,
     description: patch.description !== undefined ? patch.description : task.description,
     priority: patch.priority !== undefined ? (patch.priority as TaskWithRelations["priority"]) : task.priority,
     statusId: patch.statusId ?? task.statusId,
