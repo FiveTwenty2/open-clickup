@@ -22,7 +22,7 @@ import {
 import { apiGet, apiSend } from "@/lib/api";
 import type { TaskDetail } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
-import { Priority } from "@/lib/enums";
+import { Priority, StatusType } from "@/lib/enums";
 import { StatusControl, StatusCircle } from "@/components/menus/status-control";
 import { PriorityControl } from "@/components/menus/priority-control";
 import { AssigneeControl } from "@/components/menus/assignee-control";
@@ -59,6 +59,12 @@ export function TaskModal({
     queryKey: ["task", taskId],
     queryFn: () => apiGet<TaskDetail>(`/api/tasks/${taskId}`),
   });
+  const [showClosedSubtasks, setShowClosedSubtasks] = useState(true);
+  const subtasks = task?.subtasks ?? [];
+  const isClosed = (subtask: (typeof subtasks)[number]) =>
+    subtask.status.type === StatusType.DONE || subtask.status.type === StatusType.CLOSED;
+  const closedCount = subtasks.filter(isClosed).length;
+  const visibleSubtasks = showClosedSubtasks ? subtasks : subtasks.filter((subtask) => !isClosed(subtask));
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["task", taskId] });
@@ -134,6 +140,7 @@ export function TaskModal({
                       <TextAlignStart className="h-4 w-4" /> Description
                     </div>
                     <RichEditor
+                      key={task.id}
                       content={task.description ?? ""}
                       placeholder="Add a description…"
                       mentions={mentions}
@@ -142,15 +149,30 @@ export function TaskModal({
                   </div>
 
                   {/* subtasks */}
-                  <section className="mt-6">
-                    <h3 className="mb-2 flex items-center gap-1.5 text-[13px] font-semibold text-cu-text-secondary">
-                      <SquareCheckBig className="h-4 w-4" /> Subtasks
-                      {task.subtasks.length > 0 && (
-                        <span className="text-cu-text-tertiary">{task.subtasks.length}</span>
-                      )}
-                    </h3>
+                  <section className="mt-6" aria-label="Subtasks">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-cu-text-secondary">
+                        <SquareCheckBig className="h-4 w-4" /> Subtasks
+                        {subtasks.length > 0 && (
+                          <span className="text-cu-text-tertiary">{closedCount} of {subtasks.length} closed</span>
+                        )}
+                      </h3>
+                      <label className="flex cursor-pointer items-center gap-2 text-[13px] text-cu-text-secondary">
+                        <input
+                          type="checkbox"
+                          checked={showClosedSubtasks}
+                          onChange={(event) => setShowClosedSubtasks(event.target.checked)}
+                        />
+                        Show closed subtasks
+                      </label>
+                    </div>
                     <div className="rounded-lg border border-cu-border">
-                      {task.subtasks.map((sub) => (
+                      {!showClosedSubtasks && closedCount > 0 && visibleSubtasks.length === 0 && (
+                        <p className="border-b border-cu-border px-3 py-2 text-[13px] text-cu-text-secondary">
+                          All subtasks are closed. Select Show closed subtasks to see them.
+                        </p>
+                      )}
+                      {visibleSubtasks.map((sub) => (
                         <button
                           key={sub.id}
                           onClick={() => onOpenTask?.(sub.id)}
@@ -159,6 +181,7 @@ export function TaskModal({
                         >
                           <StatusCircle status={sub.status} size={14} />
                           <span className="text-[13px]">{sub.name}</span>
+                          {isClosed(sub) && <span className="text-xs text-cu-text-secondary">{sub.status.name}</span>}
                           <div className="ml-auto flex -space-x-1.5">
                             {sub.assignees.map((a) => (
                               <Avatar key={a.userId} user={a.user} size="sm" ring />

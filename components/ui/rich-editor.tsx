@@ -40,6 +40,7 @@ export function RichEditor({
   // ref so the mention suggestion (created once) always reads the latest list;
   // synced in an effect — the suggestion only reads it when the user types "@".
   const mentionsRef = useRef<MentionItem[]>(mentions ?? []);
+  const hasEdits = useRef(false);
   useEffect(() => {
     mentionsRef.current = mentions ?? [];
   }, [mentions]);
@@ -63,13 +64,20 @@ export function RichEditor({
     editorProps: {
       attributes: { class: cn("rich min-h-[60px] px-3 py-2 outline-none", className) },
     },
-    onUpdate: ({ editor }) => onChange?.(editor.getHTML()),
-    onBlur: ({ editor }) => onBlur?.(editor.getHTML()),
+    onUpdate: ({ editor }) => {
+      hasEdits.current = true;
+      onChange?.(editor.getHTML());
+    },
+    onBlur: ({ editor }) => {
+      if (!hasEdits.current) return;
+      hasEdits.current = false;
+      onBlur?.(editor.getHTML());
+    },
   });
 
   // keep external content in sync when switching tasks
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
+    if (editor && !(onBlur && editor.isFocused && hasEdits.current) && content !== editor.getHTML()) {
       editor.commands.setContent(content, { emitUpdate: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

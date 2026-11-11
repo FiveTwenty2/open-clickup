@@ -453,6 +453,8 @@ function TaskRow({
             {hasSubtasks ? (
               <button
                 onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+                aria-label={`Subtasks for ${task.name}`}
+                aria-expanded={expanded}
                 className="text-cu-text-tertiary hover:text-cu-text"
               >
                 {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}

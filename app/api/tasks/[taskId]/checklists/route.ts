@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { publish } from "@/lib/events";
 import { requireRole } from "@/lib/permissions";
 import { readJson, route } from "@/lib/api-helpers";
 
@@ -14,7 +15,9 @@ export const POST = route(async (req, { params }: Ctx) => {
   const last = await prisma.checklist.findFirst({ where: { taskId }, orderBy: { position: "desc" } });
   const checklist = await prisma.checklist.create({
     data: { taskId, name: name?.trim() || "Checklist", position: (last?.position ?? 0) + 1000 },
-    include: { items: true },
+    include: { items: true, task: { select: { listId: true } } },
   });
-  return NextResponse.json(checklist, { status: 201 });
+  const { task, ...result } = checklist;
+  publish({ type: "list", listId: task.listId });
+  return NextResponse.json(result, { status: 201 });
 });

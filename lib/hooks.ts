@@ -30,6 +30,22 @@ export function useRealtime() {
   const qc = useQueryClient();
   useEffect(() => {
     const es = new EventSource("/api/stream");
+    let refreshTimer: ReturnType<typeof setInterval> | undefined;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void qc.invalidateQueries({ type: "active" });
+    };
+    const stopFallback = () => {
+      clearInterval(refreshTimer);
+      refreshTimer = undefined;
+    };
+    es.onopen = () => {
+      stopFallback();
+      refresh();
+    };
+    es.onerror = () => {
+      if (refreshTimer === undefined) refreshTimer = setInterval(refresh, 15_000);
+    };
+    document.addEventListener("visibilitychange", refresh);
     es.onmessage = (e) => {
       try {
         const event = JSON.parse(e.data) as { type: string; listId?: string };
@@ -45,7 +61,11 @@ export function useRealtime() {
         /* ignore malformed event */
       }
     };
-    return () => es.close();
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      stopFallback();
+      es.close();
+    };
   }, [qc]);
 }
 
