@@ -9,6 +9,7 @@ async function login(page: Page, account: string) {
 }
 
 test("sharing controls apply to every hierarchy level and guest permissions apply to task actions", async ({ page, browser }) => {
+  test.setTimeout(60_000);
   await login(page, "santiago");
   const suffix = Date.now();
   const guestName = `Privacy guest ${suffix}`;

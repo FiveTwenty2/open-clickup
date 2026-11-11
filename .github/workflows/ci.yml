@@ -72,6 +72,7 @@ jobs:
       - run: pnpm db:seed
       # The Ubuntu runner supplies Chromium's system libraries.
       - run: pnpm exec playwright install chromium
-      - run: pnpm exec playwright test
+      - run: pnpm build
+      - run: pnpm exec playwright test --workers=2 --fail-on-flaky-tests
         env:
           CI: "true"
