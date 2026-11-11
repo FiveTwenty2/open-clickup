@@ -88,6 +88,10 @@ test("shows closed subtasks and reflects a teammate's changes without a reload",
   const toggle = subtasks.getByRole("checkbox", { name: "Show closed subtasks" });
   await expect(toggle).toBeChecked();
   await expect(subtasks.getByText("2 of 3 closed")).toBeVisible();
+  await subtasks.getByRole("button", { name: "Open child", exact: true }).click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Copy task link" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(subtasks.getByText("2 of 3 closed")).toBeVisible();
   await toggle.uncheck();
   await expect(subtasks.getByText("Done child")).toHaveCount(0);
   await expect(subtasks.getByText("Closed child")).toHaveCount(0);

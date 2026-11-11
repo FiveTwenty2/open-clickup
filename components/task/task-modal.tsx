@@ -193,7 +193,12 @@ export function TaskModal({
                         </p>
                       )}
                       {visibleSubtasks.map((sub) => (
-                        <TaskContextMenu key={sub.id} task={sub} statuses={task.list.statuses} onOpen={() => onOpenTask?.(sub.id)}>
+                        <TaskContextMenu
+                          key={sub.id}
+                          task={sub}
+                          statuses={task.list.statuses}
+                          onOpen={() => onOpenTask?.(sub.id)}
+                        >
                         <div className="flex w-full items-center gap-2 border-b border-cu-border px-3 py-2 last:border-0 hover:bg-cu-hover">
                           <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
                           <button onClick={() => onOpenTask?.(sub.id)} disabled={!onOpenTask} className="text-left text-[13px] hover:underline">{sub.name}</button>
