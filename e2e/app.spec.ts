@@ -112,6 +112,12 @@ test("shows closed subtasks and reflects a teammate's changes without a reload",
     });
     expect(checklist.ok()).toBeTruthy();
     await expect(page.getByText("Teammate checklist", { exact: true })).toBeVisible({ timeout: 8_000 });
+    const audit = page.getByRole("region", { name: "Task activity and comments" });
+    await audit.getByRole("combobox", { name: "Show" }).selectOption("activity");
+    await expect(audit.getByText(`set status to ${closed.name}`, { exact: false })).toHaveCount(0);
+    await subtasks.getByRole("button", { name: "Open child", exact: true }).click();
+    await audit.getByRole("combobox", { name: "Show" }).selectOption("activity");
+    await expect(audit.getByText(`set status to ${closed.name}`, { exact: false })).toBeVisible();
   } finally {
     await teammate.close();
   }

@@ -173,7 +173,7 @@ export function TaskModal({
 
               <div className="flex min-h-0 flex-1 flex-col md:flex-row">
                 {/* main */}
-                <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
                   {canSetType ? <TitleField
                     value={task.name}
                     onSave={(name) => update.mutate({ name })}
@@ -259,31 +259,6 @@ export function TaskModal({
                     onChange={invalidate}
                   />
 
-                  {/* activity / comments */}
-                  <section className="mt-8">
-                    <h3 className="mb-3 text-[13px] font-semibold text-cu-text-secondary">Activity</h3>
-                    <ActivityFeed
-                      taskId={taskId}
-                      comments={task.comments}
-                      activities={task.activities}
-                      statuses={task.list.statuses}
-                      members={workspace.members.map((m) => m.user)}
-                      currentUserId={currentUser.id}
-                      mentions={mentions}
-                      canComment={canComment}
-                      onChange={invalidate}
-                    />
-
-                    {canComment && <CommentComposer
-                      user={currentUser}
-                      mentions={mentions}
-                      onSubmit={async (body, files) => { await postComment(taskId, body, files); invalidate(); }}
-                    />}
-                  </section>
-                </div>
-
-                {/* sidebar */}
-                <aside className="w-full shrink-0 overflow-y-auto border-t border-cu-border bg-cu-sidebar/40 p-4 md:w-[320px] md:border-l md:border-t-0">
                   <fieldset disabled={!canSetType} className="min-w-0">
                   <DetailRow icon={<UserGlyph />} label="Assignees">
                     <AssigneeControl
@@ -371,6 +346,32 @@ export function TaskModal({
                     <div>{format(new Date(task.createdAt), "MMM d, yyyy")}</div>
                   </div>
                   </fieldset>
+                </div>
+
+                <aside className="flex min-h-0 w-full shrink-0 flex-1 border-t border-cu-border bg-cu-sidebar/40 p-4 md:w-[360px] md:flex-none md:border-l md:border-t-0">
+                  <section className="flex min-h-0 flex-1 flex-col" aria-label="Task activity and comments">
+                    <h3 className="mb-3 text-[13px] font-semibold text-cu-text-secondary">Activity &amp; comments</h3>
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                      <ActivityFeed
+                        key={taskId + ":" + (commentId ?? "")}
+                        taskId={taskId}
+                        comments={task.comments}
+                        activities={task.activities}
+                        statuses={task.list.statuses}
+                        members={workspace.members.map((m) => m.user)}
+                        currentUserId={currentUser.id}
+                        mentions={mentions}
+                        canComment={canComment}
+                        onChange={invalidate}
+                      />
+                    </div>
+                    {canComment && <CommentComposer
+                      key={taskId}
+                      user={currentUser}
+                      mentions={mentions}
+                      onSubmit={async (body, files) => { await postComment(taskId, body, files); invalidate(); }}
+                    />}
+                  </section>
                 </aside>
               </div>
             </>
@@ -545,6 +546,7 @@ function ActivityFeed({
   canComment: boolean;
   onChange: () => void;
 }) {
+  const [filter, setFilter] = useState("all");
   const statusName = (id: string) => statuses.find((s) => s.id === id)?.name;
   const memberName = (id: string) => members.find((m) => m.id === id)?.name ?? "someone";
 
@@ -561,18 +563,23 @@ function ActivityFeed({
 
   // merge top-level comments + non-comment activities into one chronological timeline
   const feed = [
-    ...topLevel.map((c) => ({ kind: "comment" as const, at: +new Date(c.createdAt), c })),
-    ...activities
-      .filter((a) => a.type !== "commented")
+    ...(filter === "activity" ? [] : topLevel).map((c) => ({ kind: "comment" as const, at: +new Date(c.createdAt), c })),
+    ...(filter === "comments" ? [] : activities)
+      .filter((a) => filter === "activity" || a.type !== "commented")
       .map((a) => ({ kind: "activity" as const, at: +new Date(a.createdAt), a })),
   ].sort((x, y) => x.at - y.at);
 
-  if (feed.length === 0) {
-    return <p className="text-[13px] text-cu-text-tertiary">No activity yet.</p>;
-  }
-
   return (
     <div className="space-y-4">
+      <label className="flex items-center gap-2 text-xs text-cu-text-secondary">
+        Show
+        <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded border border-cu-border bg-cu-panel px-2 py-1">
+          <option value="all">Activity and comments</option>
+          <option value="comments">Comments only</option>
+          <option value="activity">Audit log</option>
+        </select>
+      </label>
+      {!feed.length && <p className="text-[13px] text-cu-text-tertiary">{filter === "comments" ? "No comments yet." : "No activity yet."}</p>}
       {feed.map((item) =>
         item.kind === "comment" ? (
           <CommentItem

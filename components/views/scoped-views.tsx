@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "@/lib/api";
@@ -57,8 +58,9 @@ export function ScopedViews({ spaceId, folderId }: { spaceId?: string; folderId?
     queryKey: key, queryFn: () => apiGet<Result>(`/api/scoped-views?${params}`), retry: false,
   });
   const views = query.data?.views ?? [];
-  const fallback = views.find((view) => !view.privateOwnerId);
-  const active = views.find((view) => view.id === search.get("view")) ?? fallback;
+  const allTasks = !spaceId && !folderId;
+  const fallback = views.find((view) => !view.privateOwnerId && (!allTasks || view.position < 0));
+  const active = search.get("view") === "list" ? undefined : views.find((view) => view.id === search.get("view")) ?? fallback;
   const config = localConfig?.id === (active?.id ?? "") ? localConfig.value : viewConfig(active?.config);
   const canEdit = writable && !!active && (!active.privateOwnerId || active.privateOwnerId === currentUser.id) && (!active.protected || admin);
   const all = query.data?.tasks ?? [];
@@ -111,7 +113,7 @@ export function ScopedViews({ spaceId, folderId }: { spaceId?: string; folderId?
 
   function selectView(view: { id: string } | null) {
     setLocalConfig(null);
-    router.replace(view ? `${pathname}?view=${view.id}` : pathname);
+    router.replace(`${pathname}?view=${view?.id ?? "list"}`);
   }
   function update(next: ViewState) {
     setLocalConfig({ id: active?.id ?? "", value: next });
@@ -122,11 +124,15 @@ export function ScopedViews({ spaceId, folderId }: { spaceId?: string; folderId?
   }
 
   return <main className="min-w-0 flex-1 overflow-auto p-4 sm:p-7">
-    <h1 className="text-xl font-semibold">{query.data?.name ?? "Saved views"}</h1>
+    <div className="flex items-center justify-between gap-3">
+      <h1 className="text-xl font-semibold">{allTasks ? "All tasks" : query.data?.name ?? "Saved views"}</h1>
+      {allTasks && <Link href="/tasks" className={control}>Task search</Link>}
+    </div>
     {query.isPending && <p role="status" className="mt-3 text-sm">Loading views…</p>}
     {query.isError && <p role="alert" className="mt-3 text-sm text-cu-urgent">This location is unavailable.</p>}
     {query.data && <>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-b border-cu-border pb-2">
+      <nav aria-label="Views" className="mt-3 flex flex-wrap items-center gap-2 border-b border-cu-border pb-2">
+        {allTasks && <button type="button" className={control + (!active ? " border-cu-purple" : "")} aria-pressed={!active} onClick={() => selectView(null)}>List</button>}
         {views.map((view) => <ViewOptions key={view.id} view={view} active={view.id === active?.id}
           allowDelete isDefault={view.id === fallback?.id} selectView={selectView} locationHref={pathname} apiBase="/api/scoped-views"
           canEdit={writable && (!view.privateOwnerId || view.privateOwnerId === currentUser.id) && (!view.protected || admin)}
@@ -135,7 +141,7 @@ export function ScopedViews({ spaceId, folderId }: { spaceId?: string; folderId?
           tab={<button className={control + (view.id === active?.id ? " border-cu-purple" : "")}
             onClick={() => selectView(view)}>{view.name}{view.privateOwnerId && <span aria-hidden> · Private</span>}</button>} />)}
         {writable && <button className={control} aria-expanded={adding} onClick={() => setAdding(!adding)}>Add view</button>}
-      </div>
+      </nav>
       {adding && <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (name.trim()) create.mutate(); }}>
         <label className="grid gap-1 text-sm">View name<input className={control} value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} /></label>
         <label className="grid gap-1 text-sm">View type<select className={control} value={type} onChange={(event) => setType(event.target.value as ViewKind)}>

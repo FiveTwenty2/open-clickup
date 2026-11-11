@@ -189,7 +189,6 @@ export async function getTaskDetail(taskId: string) {
       },
       activities: {
         orderBy: { createdAt: "desc" },
-        take: 50,
         include: { user: { select: userSelect } },
       },
       list: {

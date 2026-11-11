@@ -73,6 +73,8 @@ test("imports a CSV hierarchy and includes logged time in the dashboard", async 
   });
   expect((await rejected.json()).imported).toBe(false);
   await page.getByRole("button", { name: "All tasks", exact: true }).click();
+  await expect(page.getByRole("navigation", { name: "Views", exact: true }).getByRole("button", { name: "List", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Task search", exact: true }).click();
   await page.getByLabel("Task name").fill("Imported child, quoted");
   await page.getByRole("button", { name: "Search tasks" }).click();
   await expect(page.getByRole("link", { name: /Imported child, quoted/ })).toBeVisible();

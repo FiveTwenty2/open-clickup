@@ -111,8 +111,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
         {workspace.members.some((member) => member.userId === currentUser.id && (member.role === "OWNER" || member.role === "ADMIN")) && (
           <NavItem icon={<ClipboardList className="h-4 w-4" />} label="Audit log" active={pathname === "/audit"} onClick={() => router.push("/audit")} />
         )}
-        <NavItem icon={<ListIcon className="h-4 w-4" />} label="All tasks" active={pathname === "/tasks"} onClick={() => router.push("/tasks")} />
-        <NavItem icon={<ListIcon className="h-4 w-4" />} label="Workspace views" active={pathname === "/views/workspace"} onClick={() => router.push("/views/workspace")} />
+        <NavItem icon={<ListIcon className="h-4 w-4" />} label="All tasks" active={pathname === "/tasks" || pathname === "/views/workspace"} onClick={() => router.push("/views/workspace")} />
         <NavItem icon={<LayoutGrid className="h-4 w-4" />} label="Dashboards" active={pathname === "/dashboards"} onClick={() => router.push("/dashboards")} />
         <NavItem icon={<FileText className="h-4 w-4" />} label="Docs" active={pathname === "/docs"} onClick={() => router.push("/docs")} />
         <NavItem icon={<Target className="h-4 w-4" />} label="Goals" active={pathname === "/goals"} onClick={() => router.push("/goals")} />
