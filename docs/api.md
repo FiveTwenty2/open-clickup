@@ -74,3 +74,10 @@ These endpoints use the signed-in browser session.
 - `GET /api/workspace/workload` takes ISO `from` and `to` timestamps (exclusive end, maximum eight days) and optional `listId`. It returns open scheduled tasks and their estimates and assignees for the period.
 
 Tasks accept an optional boolean `milestone` when created or updated.
+
+## Subfolders, task types, and view access
+
+- `POST /api/folders` accepts an optional `parentId` in the same space. List creation accepts any folder in the destination space. Folder reordering operates among siblings.
+- `GET /api/workspace/task-types` returns workspace task types. Owners and admins manage them with `POST`, `PATCH`, and `DELETE`. Task creation and updates accept `taskTypeId`, and `null` clears it.
+- Set `private: true` when creating a list view to limit access to its creator. Owners and admins can use `protected: true` when patching a view to lock its saved settings. Each list retains at least one shared view.
+- `GET|POST|DELETE /api/tasks/:id/public-share` retrieves, enables, or revokes a public task summary link. `GET /api/public/tasks/:key` returns the limited summary for an active task and list.

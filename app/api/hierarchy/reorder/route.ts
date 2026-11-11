@@ -33,10 +33,10 @@ export const POST = route(async (req) => {
       return;
     }
     if (source.kind === "folder" && target.kind === "folder" && placement !== "inside") {
-      const folder = await tx.folder.findFirst({ where: { id: source.id, space: { workspaceId } }, select: { spaceId: true } });
+      const folder = await tx.folder.findFirst({ where: { id: source.id, space: { workspaceId } }, select: { spaceId: true, parentId: true } });
       if (!folder) throw new ApiError(404, "Folder not found");
-      const folders = await tx.folder.findMany({ where: { spaceId: folder.spaceId }, select, orderBy: [...order] });
-      if (!folders.some((row) => row.id === target.id)) throw new ApiError(400, "Reorder folders within their space");
+      const folders = await tx.folder.findMany({ where: { spaceId: folder.spaceId, parentId: folder.parentId }, select, orderBy: [...order] });
+      if (!folders.some((row) => row.id === target.id)) throw new ApiError(400, "Reorder folders with the same parent");
       for (const [index, id] of ranked(folders, source.id, target.id, placement).entries()) {
         if (folders[index]?.id !== id || folders[index]?.position !== (index + 1) * 1000) await tx.folder.update({ where: { id }, data: { position: (index + 1) * 1000 } });
       }

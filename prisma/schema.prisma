@@ -100,6 +100,7 @@ model ApiToken {
 }
 
 model Workspace {
+  taskTypes WorkspaceTaskType[]
   messages DirectMessage[]
   id        String   @id @default(cuid())
   name      String
@@ -243,6 +244,10 @@ model Space {
 }
 
 model Folder {
+  parentId String?
+  parent Folder? @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Folder[] @relation("FolderTree")
+  @@index([parentId])
   id        String   @id @default(cuid())
   spaceId   String
   name      String
@@ -337,6 +342,10 @@ enum Priority {
 }
 
 model Task {
+  publicShare TaskPublicShare?
+  taskTypeId String?
+  taskType WorkspaceTaskType? @relation(fields: [taskTypeId], references: [id], onDelete: SetNull)
+  @@index([taskTypeId])
   milestone Boolean @default(false)
   deletedAt     DateTime?
   trashRootId   String?
@@ -609,6 +618,9 @@ enum ViewType {
 }
 
 model View {
+  privateOwnerId String?
+  protected Boolean @default(false)
+  @@index([listId, privateOwnerId])
   id       String   @id @default(cuid())
   listId   String
   name     String
@@ -708,4 +720,21 @@ model TaskResourceLink {
   task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, url])
+}
+
+model WorkspaceTaskType {
+  id String @id @default(cuid())
+  workspaceId String
+  name String
+  color String
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@unique([workspaceId, name])
+}
+
+model TaskPublicShare {
+  taskId String @id
+  key String @unique
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }

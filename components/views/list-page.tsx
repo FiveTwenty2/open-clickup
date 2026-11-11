@@ -95,9 +95,11 @@ export function ListPage({ listId }: { listId: string }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [addingView, setAddingView] = useState(false);
+  const [privateView, setPrivateView] = useState(false);
   const [viewName, setViewName] = useState("");
   const [viewType, setViewType] = useState<ViewType>("LIST");
   const client = useQueryClient();
+  const canManage = workspace.members.some((member) => member.userId === currentUser.id && (member.role === "ADMIN" || member.role === "OWNER"));
   const canWrite = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
   const archive = useMutation({
     mutationFn: (archived: boolean) => apiSend(`/api/lists/${listId}`, "PATCH", { archived }),
@@ -117,7 +119,7 @@ export function ListPage({ listId }: { listId: string }) {
   // initialize the active view + load its persisted config once data arrives
   useEffect(() => {
     if (!activeViewId && views.length) {
-      const initial = views.find((view) => view.id === viewParam) ?? views[0];
+      const initial = views.find((view) => view.id === viewParam) ?? views.find((view) => !view.privateOwnerId) ?? views[0];
       setActiveViewId(initial.id);
       setVs(vsFromConfig(initial.config));
     }
@@ -134,18 +136,19 @@ export function ListPage({ listId }: { listId: string }) {
   }
 
   const createView = useMutation({
-    mutationFn: () => apiSend<ListWithMeta["views"][number]>(`/api/lists/${listId}/views`, "POST", { name: viewName, type: viewType }),
+    mutationFn: () => apiSend<ListWithMeta["views"][number]>(`/api/lists/${listId}/views`, "POST", { name: viewName, type: viewType, private: privateView }),
     onSuccess: async (view) => {
       await client.invalidateQueries({ queryKey: ["list", listId] });
       selectView(view);
       setAddingView(false);
       setViewName("");
+      setPrivateView(false);
     },
   });
 
   function updateVs(next: ViewState) {
     setVs(next);
-    if (!activeViewId) return;
+    if (!activeViewId || !canWrite || (activeView?.protected && !canManage)) return;
     clearTimeout(saveTimers.current.get(activeViewId));
     saveTimers.current.set(activeViewId, setTimeout(() => {
       saveTimers.current.delete(activeViewId);
@@ -285,7 +288,7 @@ export function ListPage({ listId }: { listId: string }) {
       <div className="flex items-center justify-between border-b border-cu-border px-3">
         <div className="flex items-center gap-0.5">
           {list.views.map((v) => (
-            <ViewOptions key={v.id} view={v} active={activeView?.id === v.id} canEdit={canWrite} isDefault={v.id === views[0]?.id} allowDelete={views.length > 1}
+            <ViewOptions key={v.id} view={v} active={activeView?.id === v.id} canEdit={canWrite && (!v.protected || canManage)} canManage={canManage} isDefault={v.id === views.find((view) => !view.privateOwnerId)?.id} allowDelete={!!v.privateOwnerId || views.filter((view) => !view.privateOwnerId).length > 1}
               selectView={(view) => {
                 if (view) selectView(view);
                 else if (v.id === activeView?.id) setActiveViewId(null);
@@ -300,6 +303,8 @@ export function ListPage({ listId }: { listId: string }) {
             >
               {VIEW_ICON[v.type]}
               {v.name}
+              {v.privateOwnerId && <span title="Private view" aria-hidden>· Private</span>}
+              {v.protected && <span title="Locked view settings" aria-hidden>· Locked</span>}
             </button>} />
           ))}
           <Popover.Root open={addingView} onOpenChange={setAddingView}>
@@ -317,6 +322,7 @@ export function ListPage({ listId }: { listId: string }) {
                       {Object.values(ViewType).map((type) => <option key={type} value={type}>{type[0] + type.slice(1).toLowerCase()}</option>)}
                     </select>
                   </label>
+                  <label className="flex gap-2"><input type="checkbox" checked={privateView} onChange={(event) => setPrivateView(event.target.checked)} /> Private view</label>
                   {createView.isError && <p role="alert">Could not create this view.</p>}
                   <button disabled={!viewName.trim() || createView.isPending} className="rounded bg-cu-purple px-2 py-1.5 text-white disabled:opacity-50">Create view</button>
                 </form>
@@ -354,6 +360,7 @@ export function ListPage({ listId }: { listId: string }) {
               {canWrite && <button className="text-left text-cu-purple" onClick={() => setStatusMgr(true)}>Manage statuses</button>}
             </Popover.Content></Popover.Portal>
           </Popover.Root>
+          {activeView?.protected && !canManage && <span className="text-xs text-cu-text-secondary">Filters apply for this session</span>}
           <GroupMenu state={vs} onChange={updateVs} />
           <FilterMenu state={vs} onChange={updateVs} tasks={data.tasks} />
           <SortMenu state={vs} onChange={updateVs} />

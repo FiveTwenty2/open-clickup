@@ -67,6 +67,9 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["messages"] });
         } else if (event.type === "bootstrap") {
           qc.invalidateQueries({ queryKey: ["bootstrap"] });
+          qc.invalidateQueries({ queryKey: ["task-types"] });
+          qc.invalidateQueries({ queryKey: ["list"] });
+          qc.invalidateQueries({ queryKey: ["task"] });
           qc.invalidateQueries({ queryKey: ["archived-lists"] });
         } else if (event.type === "docs") {
           qc.invalidateQueries({ queryKey: ["documents"] });
@@ -212,7 +215,7 @@ export function useHierarchy() {
     onSuccess: refresh,
   });
   const createFolder = useMutation({
-    mutationFn: (v: { spaceId: string; name: string }) =>
+    mutationFn: (v: { spaceId: string; parentId?: string; name: string }) =>
       apiSend<{ id: string }>("/api/folders", "POST", v),
     onSuccess: refresh,
   });

@@ -167,6 +167,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
       </div>
 
       {template && <ListTemplatesDialog target={template} onClose={() => setTemplate(null)} />}
+      <Link href="/workspace/task-types" className="px-4 py-2 text-xs text-cu-text-secondary hover:text-cu-purple">Task types</Link>
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-cu-border px-3 py-2">
         <UserSwitcher />
@@ -321,8 +322,8 @@ function SpaceItem({ space, onTemplate }: { space: SpaceNode; onTemplate: (targe
       /></div></SidebarContext></HierarchyDragRow>
       {open && (
         <div>
-          {space.folders.map((folder) => (
-            <FolderItem key={folder.id} folder={folder} onTemplate={onTemplate} />
+          {space.folders.filter((folder) => !folder.parentId).map((folder) => (
+            <FolderItem key={folder.id} folder={folder} folders={space.folders} depth={1} onTemplate={onTemplate} />
           ))}
           {space.lists.map((list) => (
             <ListItemRow key={list.id} list={list} depth={1} onTemplate={onTemplate} />
@@ -358,17 +359,18 @@ function SpaceItem({ space, onTemplate }: { space: SpaceNode; onTemplate: (targe
   );
 }
 
-function FolderItem({ folder, onTemplate }: { folder: FolderNode; onTemplate: (target: ListTemplateTarget) => void }) {
+function FolderItem({ folder, folders, depth, onTemplate }: { folder: FolderNode; folders: FolderNode[]; depth: number; onTemplate: (target: ListTemplateTarget) => void }) {
   const router = useRouter();
-  const { createList, rename, remove } = useHierarchy();
+  const { createList, createFolder, rename, remove } = useHierarchy();
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<"list" | "folder" | null>(null);
+  const children = folders.filter((child) => child.parentId === folder.id);
   const [renaming, setRenaming] = useState(false);
 
   if (renaming) {
     return (
       <InlineInput
-        depth={1}
+        depth={depth}
         initial={folder.name}
         leading={<FolderIcon className="h-4 w-4 text-cu-text-secondary" />}
         onSubmit={(name) => {
@@ -384,39 +386,46 @@ function FolderItem({ folder, onTemplate }: { folder: FolderNode; onTemplate: (t
     <div>
       <HierarchyDragRow kind="folder" id={folder.id} name={folder.name}>
       <SidebarContext actions={[
-        { label: "New List", run: () => { setOpen(true); setCreating(true); } },
+        { label: "New List", run: () => { setOpen(true); setCreating("list"); } },
         { label: "New List from template", run: () => onTemplate({ spaceId: folder.spaceId, folderId: folder.id }) },
+        ...(depth < 8 ? [{ label: "New subfolder", run: () => { setOpen(true); setCreating("folder"); } }] : []),
         { label: "Rename folder", run: () => setRenaming(true) },
       ]}><div><Row
-        depth={1}
+        depth={depth}
         open={open}
         onToggle={() => setOpen((o) => !o)}
-        hasChildren={folder.lists.length > 0}
+        hasChildren={folder.lists.length > 0 || children.length > 0}
         leading={open ? <FolderOpen className="h-4 w-4 text-cu-text-secondary" /> : <FolderIcon className="h-4 w-4 text-cu-text-secondary" />}
         label={folder.name}
         onRename={() => setRenaming(true)}
         onDelete={() => remove.mutate({ kind: "folders", id: folder.id })}
         addMenu={<>
-          <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating(true); }} />
+          {depth < 8 && <MenuItem icon={<FolderPlus className="h-4 w-4" />} label="New subfolder" onSelect={() => { setOpen(true); setCreating("folder"); }} />}
+          <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating("list"); }} />
           <MenuItem icon={<FileText className="h-4 w-4" />} label="New List from template" onSelect={() => onTemplate({ spaceId: folder.spaceId, folderId: folder.id })} />
         </>}
       /></div></SidebarContext></HierarchyDragRow>
       {open && (
         <>
+          {children.map((child) => <FolderItem key={child.id} folder={child} folders={folders} depth={depth + 1} onTemplate={onTemplate} />)}
           {folder.lists.map((list) => (
-            <ListItemRow key={list.id} list={list} depth={2} onTemplate={onTemplate} />
+            <ListItemRow key={list.id} list={list} depth={depth + 1} onTemplate={onTemplate} />
           ))}
-          {creating && (
+          {creating === "folder" && <InlineInput depth={depth + 1} placeholder="Subfolder name"
+            onSubmit={(name) => createFolder.mutate({ spaceId: folder.spaceId, parentId: folder.id, name }, { onSuccess: () => setCreating(null) })}
+            onCancel={() => setCreating(null)} />}
+          {createFolder.isError && <p role="alert" className="pl-6 text-xs text-cu-urgent">Could not create the subfolder.</p>}
+          {creating === "list" && (
             <InlineInput
-              depth={2}
+              depth={depth + 1}
               placeholder="List name"
               leading={<ListIcon className="h-4 w-4 text-cu-text-secondary" />}
               onSubmit={async (name) => {
                 const l = await createList.mutateAsync({ spaceId: folder.spaceId, folderId: folder.id, name });
-                setCreating(false);
+                setCreating(null);
                 router.push(`/l/${l.id}`);
               }}
-              onCancel={() => setCreating(false)}
+              onCancel={() => setCreating(null)}
             />
           )}
         </>

@@ -11,7 +11,7 @@ export async function snapshotList(workspaceId: string, listId: string, includeT
       color: true, icon: true,
       automations: { select: { name: true, enabled: true, trigger: true, statusId: true, priority: true, dueDays: true, assigneeId: true } },
       statuses: { select: { id: true, name: true, color: true, type: true, position: true, wipLimit: true } },
-      views: { select: { name: true, type: true, config: true, position: true } },
+      views: { where: { privateOwnerId: null }, select: { name: true, type: true, config: true, position: true } },
       customFields: { select: {
         id: true, name: true, type: true, config: true, position: true,
         options: { select: { id: true, label: true, color: true, position: true } },

@@ -16,6 +16,7 @@ export const userSelect = {
 } satisfies Prisma.UserSelect;
 
 export const taskInclude = {
+  taskType: { select: { id: true, name: true, color: true } },
   status: true,
   assignees: { include: { user: { select: userSelect } } },
   tags: { include: { tag: true } },
@@ -78,7 +79,7 @@ export type ListNode = SpaceNode["lists"][number];
 // List detail (statuses, custom fields, views, tasks)
 // ----------------------------------------------------------------------------
 
-export async function getListData(listId: string) {
+export async function getListData(listId: string, viewerId: string) {
   const list = await prisma.list.findUnique({
     where: { id: listId },
     include: {
@@ -89,7 +90,10 @@ export async function getListData(listId: string) {
         orderBy: { position: "asc" },
         include: { options: { orderBy: { position: "asc" } } },
       },
-      views: { orderBy: { position: "asc" } },
+      views: {
+        where: { OR: [{ privateOwnerId: null }, { privateOwnerId: viewerId }] },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
+      },
     },
   });
   if (!list) return null;

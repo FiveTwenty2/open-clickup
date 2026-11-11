@@ -42,6 +42,8 @@ import { CommentReactions } from "@/components/task/comment-reactions";
 import { TaskMenu } from "@/components/task/save-template";
 import { Attachments } from "@/components/task/attachments";
 import { TimeTracking } from "@/components/task/time-tracking";
+import { PublicTaskShare } from "@/components/task/public-share";
+import { TaskTypeControl } from "@/components/task/task-type-control";
 import { Relationships } from "@/components/task/relationships";
 import { Dependencies } from "@/components/task/dependencies";
 import { useWorkspace } from "@/components/workspace-context";
@@ -62,6 +64,7 @@ export function TaskModal({
 }) {
   const qc = useQueryClient();
   const { currentUser, workspace } = useWorkspace();
+  const canSetType = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
   const mentions = workspace.members.map((m) => ({ id: m.user.id, label: m.user.name }));
   const { data: task, isLoading, isError, refetch } = useQuery({
     queryKey: ["task", taskId],
@@ -130,6 +133,7 @@ export function TaskModal({
             <>
               {/* header */}
               <div className="flex items-center gap-2 border-b border-cu-border px-4 py-2.5">
+                <TaskTypeControl value={task.taskType} editable={canSetType} onChange={(taskTypeId) => update.mutate({ taskTypeId })} />
                 {task.milestone && <span className="flex items-center gap-1 text-xs text-cu-purple"><Diamond className="h-3.5 w-3.5 fill-current" /> Milestone</span>}
                 <StatusControl
                   current={task.status}
@@ -145,6 +149,7 @@ export function TaskModal({
                   </button>
                 )}
                 <div className="ml-auto flex items-center gap-1">
+                  {canSetType && !task.archived && <PublicTaskShare key={taskId} taskId={taskId} />}
                   <TaskMenu taskId={taskId} defaultName={task.name} listId={listId} archived={task.archived} onClose={onClose} onOpenTask={onOpenTask} />
                   <button aria-label={expanded ? "Restore task window" : "Expand task window"} aria-pressed={expanded} onClick={() => setExpanded(!expanded)} className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
                     <Expand className="h-4 w-4" />
@@ -207,8 +212,8 @@ export function TaskModal({
                           onOpen={() => onOpenTask?.(sub.id)}
                         >
                         <div className="flex w-full items-center gap-2 border-b border-cu-border px-3 py-2 last:border-0 hover:bg-cu-hover">
-                          {task.milestone && <span className="flex items-center gap-1 text-xs text-cu-purple"><Diamond className="h-3.5 w-3.5 fill-current" /> Milestone</span>}
-                <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
+                          {sub.milestone && <Diamond aria-label="Milestone" role="img" className="h-3.5 w-3.5 fill-current text-cu-purple" />}
+                          <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
                           <button onClick={() => onOpenTask?.(sub.id)} disabled={!onOpenTask} className="text-left text-[13px] hover:underline">{sub.name}</button>
                           {isClosed(sub) && <span className="text-xs text-cu-text-secondary">{sub.status.name}</span>}
                           <div className="ml-auto flex -space-x-1.5">

@@ -52,6 +52,12 @@ export async function requireTaskInWorkspace(taskId: string, workspaceId: string
   return task;
 }
 
+export async function requireWorkspaceTaskType(workspaceId: string, typeId?: string | null) {
+  if (typeId && !await prisma.workspaceTaskType.findFirst({ where: { id: typeId, workspaceId }, select: { id: true } })) {
+    throw new ApiError(400, "Select a task type from this workspace");
+  }
+}
+
 export async function requireWorkspaceUsers(workspaceId: string, userIds: string[]) {
   const ids = [...new Set(userIds)];
   if (!ids.length) return;

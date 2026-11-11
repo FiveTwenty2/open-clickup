@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { updateTask } from "@/lib/tasks";
 import { getTaskDetail } from "@/lib/queries";
 import { requireRole } from "@/lib/permissions";
-import { requireIntegrationAccess, requireTaskInWorkspace, requireWorkspaceUsers } from "@/lib/integration-access";
+import { requireIntegrationAccess, requireTaskInWorkspace, requireWorkspaceUsers, requireWorkspaceTaskType } from "@/lib/integration-access";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
 import { trashTasks } from "@/lib/task-recovery";
 
@@ -22,6 +22,7 @@ const patchSchema = z.object({
   recurrence: z.enum(["DAILY", "WEEKDAYS", "WEEKLY", "BIWEEKLY", "MONTHLY"]).nullish(),
   archived: z.boolean().optional(),
   milestone: z.boolean().optional(),
+  taskTypeId: z.string().min(1).nullable().optional(),
   assigneeIds: z.array(z.string()).optional(),
   tagIds: z.array(z.string()).optional(),
   watcherIds: z.array(z.string()).optional(),
@@ -41,6 +42,7 @@ export const PATCH = route(async (req, { params }: Ctx) => {
   const patch = await readJson(req, patchSchema);
   const { user, workspaceId } = await requireIntegrationAccess(req, true);
   const target = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireWorkspaceTaskType(workspaceId, patch.taskTypeId);
   await requireWorkspaceUsers(workspaceId, [...(patch.assigneeIds ?? []), ...(patch.watcherIds ?? [])]);
   if (patch.tagIds?.length) {
     const ids = [...new Set(patch.tagIds)];

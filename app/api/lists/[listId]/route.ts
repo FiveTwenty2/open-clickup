@@ -16,9 +16,9 @@ const schema = z.object({
 
 export const GET = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  const { workspaceId } = await requireIntegrationAccess(req);
+  const { workspaceId, user } = await requireIntegrationAccess(req);
   await requireListInWorkspace(listId, workspaceId);
-  const data = await getListData(listId);
+  const data = await getListData(listId, user.id);
   if (!data) throw new ApiError(404, "List not found");
   return NextResponse.json(data);
 });

@@ -10,17 +10,19 @@ import type { ListWithMeta } from "@/lib/queries";
 type View = ListWithMeta["views"][number];
 const button = "rounded border border-cu-border px-2 py-1 text-sm hover:bg-cu-hover disabled:opacity-50";
 
-export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean }) {
+export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault, canManage }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean; canManage: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(view.name);
   const [notice, setNotice] = useState("");
   const [confirm, setConfirm] = useState(false);
   const client = useQueryClient();
   const mutation = useMutation({
-    mutationFn: (action: "rename" | "copy" | "delete" | "default") => {
+    mutationFn: (action: "rename" | "copy" | "delete" | "default" | "privacy" | "lock") => {
       const path = `/api/views/${view.id}`;
       if (action === "rename") return apiSend<View>(path, "PATCH", { name });
       if (action === "default") return apiSend<View>(path, "PATCH", { makeDefault: true });
+      if (action === "lock") return apiSend<View>(path, "PATCH", { protected: !view.protected });
+      if (action === "privacy") return apiSend<View>(path, "PATCH", { private: !view.privateOwnerId });
       if (action === "copy") return apiSend<View>(path, "POST");
       return apiSend(path, "DELETE").then(() => null);
     },
@@ -50,7 +52,12 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
           catch { setNotice("Could not copy the view link."); }
         }}>Copy view link</button>
         {notice && <p role="status" className="mb-2 text-xs">{notice}</p>}
-        {canEdit && !isDefault && <button className={button + " mb-2 w-full text-left"} disabled={mutation.isPending} onClick={() => mutation.mutate("default")}>Set as default view</button>}
+        {canEdit && !isDefault && !view.privateOwnerId && <button className={button + " mb-2 w-full text-left"} disabled={mutation.isPending} onClick={() => mutation.mutate("default")}>Set as default view</button>}
+        {canManage && <button className={button + " mb-2 w-full text-left"} disabled={mutation.isPending} onClick={() => mutation.mutate("lock")}>
+          {view.protected ? "Unlock view settings" : "Lock view settings"}
+        </button>}
+        {canEdit && (canManage || view.privateOwnerId) && <button className={button + " mb-2 w-full text-left"} disabled={mutation.isPending || (!view.privateOwnerId && !allowDelete)}
+          onClick={() => mutation.mutate("privacy")}>{view.privateOwnerId ? "Share with workspace" : "Make private"}</button>}
         {canEdit && <><form className="grid gap-2" onSubmit={(event) => { event.preventDefault(); mutation.mutate("rename"); }}>
           <label className="grid gap-1 text-sm">Current view name<input className={button} value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} /></label>
           <button className={button} disabled={mutation.isPending || !name.trim() || name.trim() === view.name}>Rename view</button>

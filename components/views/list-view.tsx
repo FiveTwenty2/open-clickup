@@ -537,6 +537,7 @@ function TaskRow({
       >
         <div className="flex items-center gap-1.5 py-2">
           {depth > 0 && <span aria-hidden className="shrink-0" style={{ width: Math.min(depth, 8) * 14 }} />}
+          {task.taskType && <span className="max-w-20 shrink-0 truncate text-[11px]" style={{ color: task.taskType.color }}>{task.taskType.name}</span>}
           {task.milestone && <span aria-label="Milestone" role="img" className="shrink-0 text-xs text-cu-purple">◆</span>}
           {handle && <span className="-ml-1 flex w-3 justify-center">{handle}</span>}
           <span className="flex w-4 justify-center" onClick={(e) => e.stopPropagation()}>

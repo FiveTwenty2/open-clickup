@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createTask } from "@/lib/tasks";
-import { requireIntegrationAccess, requireListInWorkspace, requireWorkspaceUsers } from "@/lib/integration-access";
+import { requireIntegrationAccess, requireListInWorkspace, requireWorkspaceUsers, requireWorkspaceTaskType } from "@/lib/integration-access";
 import { readJson, route } from "@/lib/api-helpers";
 
 const schema = z.object({
@@ -13,12 +13,14 @@ const schema = z.object({
   assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().datetime().optional(),
   milestone: z.boolean().optional(),
+  taskTypeId: z.string().min(1).nullable().optional(),
 });
 
 export const POST = route(async (req) => {
   const body = await readJson(req, schema);
   const { user, workspaceId } = await requireIntegrationAccess(req, true);
   await requireListInWorkspace(body.listId, workspaceId);
+  await requireWorkspaceTaskType(workspaceId, body.taskTypeId);
   await requireWorkspaceUsers(workspaceId, body.assigneeIds ?? []);
   const task = await createTask({
     listId: body.listId,
@@ -30,6 +32,7 @@ export const POST = route(async (req) => {
     createdById: user.id,
     dueDate: body.dueDate,
     milestone: body.milestone,
+    taskTypeId: body.taskTypeId,
   });
   return NextResponse.json(task, { status: 201 });
 });

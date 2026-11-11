@@ -9,16 +9,17 @@ import { publish } from "@/lib/events";
 type Ctx = { params: Promise<{ listId: string }> };
 const schema = z.object({
   name: z.string().trim().min(1).max(80),
+  private: z.boolean().optional(),
   type: z.enum(["LIST", "BOARD", "CALENDAR", "GANTT", "TABLE"]),
 });
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  const { workspaceId } = await requireRole("MEMBER");
+  const { workspaceId, user } = await requireRole("MEMBER");
   await requireListInWorkspace(listId, workspaceId);
-  const body = await readJson(req, schema);
+  const { private: isPrivate, ...body } = await readJson(req, schema);
   const last = await prisma.view.findFirst({ where: { listId }, orderBy: { position: "desc" } });
-  const view = await prisma.view.create({ data: { ...body, listId, position: (last?.position ?? 0) + 1 } });
+  const view = await prisma.view.create({ data: { ...body, listId, privateOwnerId: isPrivate ? user.id : null, position: (last?.position ?? 0) + 1 } });
   publish({ type: "list", listId });
   return NextResponse.json(view, { status: 201 });
 });
