@@ -110,7 +110,11 @@ test("sharing controls apply to every hierarchy level and guest permissions appl
     const teamName = `Sharing team ${suffix}`;
     await sharing.getByRole("textbox", { name: "Team name" }).fill(teamName);
     await sharing.getByRole("checkbox", { name: guestName }).check();
+    const teamSaved = page.waitForResponse((response) =>
+      response.url().endsWith("/api/workspace/access-teams") && response.request().method() === "POST", { timeout: 10_000 });
     await sharing.getByRole("button", { name: "Create team" }).click();
+    const savedTeam = await teamSaved;
+    expect(savedTeam.status(), await savedTeam.text()).toBe(201);
     await expect(sharing.getByRole("option", { name: `${teamName} (team)` })).toHaveCount(1);
     await sharing.getByRole("button", { name: "Cancel" }).click();
     const teams = await (await page.request.get("/api/workspace/access-teams")).json();
@@ -135,8 +139,7 @@ test("sharing controls apply to every hierarchy level and guest permissions appl
     expect((await guest.request.delete(taskUrl)).status()).toBe(200);
     await assertGuestTask(404);
   } finally {
-    await guest.close();
-    await admin.close();
+    await Promise.allSettled([guest.close(), admin.close()]);
     for (const userId of [guestId, adminId]) {
       if (userId) await page.request.patch("/api/workspace/members", { data: { userId, role: null } });
     }

@@ -46,7 +46,7 @@ function ItemSharingDialog({ target, close }: { target: Target; close: () => voi
           <Dialog.Description className="mb-4 text-sm text-cu-text-secondary">{target.name}</Dialog.Description>
           {access.isPending ? <p className="text-sm">Loading permissions…</p> :
             access.isError ? <p role="alert" className="text-sm">Permissions could not be loaded.</p> :
-            <SharingForm key={access.dataUpdatedAt} target={target} endpoint={endpoint} access={access.data} close={close} />}
+            <SharingForm target={target} endpoint={endpoint} access={access.data} close={close} />}
           {(access.isPending || access.isError) && <Dialog.Close className={`${buttonClass} mt-4`}>Close</Dialog.Close>}
         </Dialog.Content>
       </Dialog.Portal>
@@ -60,12 +60,15 @@ function SharingForm({ target, endpoint, access, close }: { target: Target; endp
   const [grants, setGrants] = useState(access.grants);
   const [subject, setSubject] = useState("");
   const [manageTeams, setManageTeams] = useState(false);
-  const [teams, setTeams] = useState(access.teams);
+  const accessKey = ["item-access", target.kind, target.id];
   const options = [...access.people.map((person) => ({ key: `person:${person.id}`, label: person.name || person.email })),
-    ...teams.map((team) => ({ key: `team:${team.id}`, label: `${team.name} (team)` }))];
+    ...access.teams.map((team) => ({ key: `team:${team.id}`, label: `${team.name} (team)` }))];
   const save = useMutation({
     mutationFn: () => apiSend(endpoint, "PATCH", { private: privateItem, grants }),
     onSuccess: async () => {
+      client.setQueryData<Access>(accessKey, (current) => current && ({
+        ...current, private: privateItem, grants,
+      }));
       close();
       await client.invalidateQueries();
     },
@@ -114,7 +117,7 @@ function SharingForm({ target, endpoint, access, close }: { target: Target; endp
       {access.canManageTeams && <>
         <button type="button" className={buttonClass} onClick={() => setManageTeams(!manageTeams)}>{manageTeams ? "Hide teams" : "Manage teams"}</button>
         {manageTeams && <TeamEditor people={access.people} onChange={(next) => {
-          setTeams(next);
+          client.setQueryData<Access>(accessKey, (current) => current && ({ ...current, teams: next }));
           setGrants((current) => current.filter((grant) => grant.subjectType === "person" || next.some((team) => team.id === grant.subjectId)));
         }} />}
       </>}
