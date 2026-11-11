@@ -70,7 +70,8 @@ jobs:
       - run: pnpm prisma generate
       - run: pnpm prisma migrate deploy
       - run: pnpm db:seed
-      - run: pnpm exec playwright install --with-deps chromium
+      # The Ubuntu runner supplies Chromium's system libraries.
+      - run: pnpm exec playwright install chromium
       - run: pnpm exec playwright test
         env:
           CI: "true"
