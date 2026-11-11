@@ -10,6 +10,7 @@ type Ctx = { params: Promise<{ viewId: string }> };
 const schema = z.object({
   config: z.any().optional(),
   name: z.string().trim().min(1).max(80).optional(),
+  makeDefault: z.literal(true).optional(),
 });
 
 export const PATCH = route(async (req, { params }: Ctx) => {
@@ -19,8 +20,19 @@ export const PATCH = route(async (req, { params }: Ctx) => {
   const data: Record<string, unknown> = {};
   if (body.config !== undefined) data.config = body.config;
   if (body.name !== undefined) data.name = body.name;
-  const view = await prisma.view.update({ where: { id: viewId, list: { space: { workspaceId } } }, data });
-  if (body.name !== undefined) publish({ type: "list", listId: view.listId });
+  const view = await prisma.$transaction(async (tx) => {
+    const current = await tx.view.findFirst({ where: { id: viewId, list: { space: { workspaceId } } } });
+    if (!current) throw new ApiError(404, "View not found");
+    if (body.makeDefault) {
+      await tx.$queryRaw`SELECT id FROM "List" WHERE id = ${current.listId} FOR UPDATE`;
+      const siblings = await tx.view.findMany({ where: { listId: current.listId, id: { not: viewId } },
+        orderBy: [{ position: "asc" }, { id: "asc" }], select: { id: true } });
+      for (const [index, sibling] of siblings.entries()) await tx.view.update({ where: { id: sibling.id }, data: { position: index + 1 } });
+      data.position = 0;
+    }
+    return tx.view.update({ where: { id: viewId }, data });
+  });
+  if (body.name !== undefined || body.makeDefault) publish({ type: "list", listId: view.listId });
   return NextResponse.json(view);
 });
 

@@ -54,14 +54,30 @@ export function ListView({
   data,
   onOpenTask,
   groupBy = "status",
-  canReorder = true,
+  canReorder = true, subtasks = "collapsed", hideClosedSubtasks = false,
 }: {
   data: ListData;
   onOpenTask: (taskId: string) => void;
   groupBy?: GroupBy;
   canReorder?: boolean;
+  subtasks?: "collapsed" | "expanded" | "separate";
+  hideClosedSubtasks?: boolean;
 }) {
-  const { list, tasks } = data;
+  const { list } = data;
+  const tasks = useMemo(() => hideClosedSubtasks
+    ? data.tasks.filter((task) => !task.parentId || !isCompletedStatus(task.status.type))
+    : data.tasks, [data.tasks, hideClosedSubtasks]);
+  const childrenByParent = useMemo(() => {
+    const children = new Map<string, TaskWithRelations[]>();
+    if (subtasks === "separate") return children;
+    for (const task of data.allTasks) {
+      if (!task.parentId || (hideClosedSubtasks && isCompletedStatus(task.status.type))) continue;
+      const siblings = children.get(task.parentId) ?? [];
+      siblings.push(task);
+      children.set(task.parentId, siblings);
+    }
+    return children;
+  }, [data.allTasks, hideClosedSubtasks, subtasks]);
   const statuses = list.statuses;
   const customFields = list.customFields;
   const { workspace } = useWorkspace();
@@ -154,7 +170,7 @@ export function ListView({
       const rows = cols.all ?? tasks;
       const from = rows.findIndex((row) => row.id === id);
       const to = rows.findIndex((row) => row.id === overId);
-      if (from < 0 || to < 0 || reorder.isPending) return;
+      if (from < 0 || to < 0 || reorder.isPending || rows[from].parentId !== rows[to].parentId) return;
       setCols({ all: arrayMove(rows, from, to) });
       reorder.mutate({ taskId: id, targetId: overId, placement: from < to ? "after" : "before" }, {
         onError: () => setCols({ all: rows }),
@@ -171,6 +187,15 @@ export function ListView({
       setCols((prev) => ({ ...prev, [col]: items }));
     }
     const finalIdx = items.findIndex((t) => t.id === id);
+    const moved = items[finalIdx];
+    const anchor = items.find((item) => item.id === overId);
+    if (moved && anchor && moved.statusId === col && oldIdx !== overIdx) {
+      if (moved.parentId === anchor.parentId) reorder.mutate({
+        taskId: id, targetId: overId, placement: oldIdx < overIdx ? "after" : "before",
+      });
+      else setCols(Object.fromEntries(groupTasks(tasks, groupBy, { statuses, members }).map((group) => [group.id, group.tasks])));
+      return;
+    }
     const position = midpoint(items[finalIdx - 1]?.position ?? null, items[finalIdx + 1]?.position ?? null);
     const patch: { statusId?: string; position: number } = { position };
     const task = items[finalIdx];
@@ -195,6 +220,7 @@ export function ListView({
           firstStatusId={statuses[0]?.id}
           gridStyle={gridStyle}
           sortable={sortable}
+          tree={{ childrenByParent, expandAll: subtasks === "expanded", canReorder }}
           selected={selected}
           onToggleSelect={toggleSelect}
           onOpenTask={onOpenTask}
@@ -276,6 +302,7 @@ function Group({
   firstStatusId,
   gridStyle,
   sortable,
+  tree,
   selected,
   onToggleSelect,
   onOpenTask,
@@ -288,6 +315,7 @@ function Group({
   firstStatusId: string | undefined;
   gridStyle: React.CSSProperties;
   sortable: boolean;
+  tree: RowTree;
   selected: Set<string>;
   onToggleSelect: (id: string) => void;
   onOpenTask: (id: string) => void;
@@ -297,7 +325,7 @@ function Group({
   const [adding, setAdding] = useState(false);
   const [visible, setVisible] = useState(PAGE_SIZE);
 
-  const rowProps = { statuses, customFields, gridStyle, selected, onToggleSelect, onOpenTask, onUpdate };
+  const rowProps = { statuses, customFields, gridStyle, selected, onToggleSelect, onOpenTask, onUpdate, tree };
   const shown = group.tasks.slice(0, visible);
   const hidden = group.tasks.length - shown.length;
 
@@ -355,7 +383,9 @@ function Group({
   );
 }
 
+type RowTree = { childrenByParent: Map<string, TaskWithRelations[]>; expandAll: boolean; canReorder: boolean };
 type RowProps = {
+  tree: RowTree;
   statuses: StatusModel[];
   customFields: CustomFieldWithOptions[];
   gridStyle: React.CSSProperties;
@@ -378,7 +408,7 @@ function SortableBody({ group, rowProps }: { group: TaskGroup; rowProps: RowProp
   );
 }
 
-function SortableRow({ task, rowProps }: { task: TaskWithRelations; rowProps: RowProps }) {
+function SortableRow({ task, rowProps, depth }: { task: TaskWithRelations; rowProps: RowProps; depth?: number }) {
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "row" },
@@ -391,6 +421,7 @@ function SortableRow({ task, rowProps }: { task: TaskWithRelations; rowProps: Ro
     >
       <TaskRow
         task={task}
+        depth={depth}
         {...rowProps}
         handle={
           <button
@@ -409,6 +440,36 @@ function SortableRow({ task, rowProps }: { task: TaskWithRelations; rowProps: Ro
   );
 }
 
+function NestedRows({ tasks, depth, rowProps }: { tasks: TaskWithRelations[]; depth: number; rowProps: RowProps }) {
+  const listId = tasks[0]?.listId;
+  const client = useQueryClient();
+  const reorder = useMutation({
+    mutationFn: ({ taskId, targetId, placement }: { taskId: string; targetId: string; placement: string }) =>
+      apiSend(`/api/lists/${listId}/reorder`, "POST", { taskId, targetId, placement }),
+    onSettled: () => client.invalidateQueries({ queryKey: ["list", listId] }),
+  });
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  if (!rowProps.tree.canReorder || tasks.length < 2) {
+    return tasks.map((task) => <TaskRow key={task.id} task={task} depth={depth} {...rowProps} />);
+  }
+  return <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={({ active, over }) => {
+    if (!over || active.id === over.id || reorder.isPending) return;
+    const from = tasks.findIndex((task) => task.id === active.id);
+    const to = tasks.findIndex((task) => task.id === over.id);
+    if (from >= 0 && to >= 0) reorder.mutate({
+      taskId: tasks[from].id, targetId: tasks[to].id, placement: from < to ? "after" : "before",
+    });
+  }}>
+    {reorder.isError && <p role="alert" className="px-8 text-xs text-cu-urgent">Could not save subtask order.</p>}
+    <SortableContext items={tasks.map((task) => task.id)} strategy={verticalListSortingStrategy}>
+      {tasks.map((task) => <SortableRow key={task.id} task={task} depth={depth} rowProps={rowProps} />)}
+    </SortableContext>
+  </DndContext>;
+}
+
 function TaskRow({
   task,
   statuses,
@@ -419,6 +480,8 @@ function TaskRow({
   onOpenTask,
   onUpdate,
   handle,
+  tree,
+  depth = 0,
 }: {
   task: TaskWithRelations;
   statuses: StatusModel[];
@@ -429,15 +492,19 @@ function TaskRow({
   onOpenTask: (id: string) => void;
   onUpdate: (taskId: string, patch: Record<string, unknown>) => void;
   handle?: React.ReactNode;
+  tree: RowTree;
+  depth?: number;
 }) {
   const isSelected = selected.has(task.id);
-  const [expanded, setExpanded] = useState(false);
+  const [expansion, setExpanded] = useState<{ mode: boolean; value: boolean }>();
+  const expanded = expansion?.mode === tree.expandAll ? expansion.value : tree.expandAll;
   const [renaming, setRenaming] = useState(false);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setField = useSetFieldValue(task.listId);
   const del = useDeleteTask(task.listId);
   const duplicate = useDuplicateTask(task.listId);
-  const hasSubtasks = task.subtasks.length > 0;
+  const children = tree.childrenByParent.get(task.id) ?? [];
+  const hasSubtasks = children.length > 0;
 
   // single click on the name opens the task; double click renames it
   function onNameClick(e: React.MouseEvent) {
@@ -469,6 +536,7 @@ function TaskRow({
         onClick={() => !renaming && onOpenTask(task.id)}
       >
         <div className="flex items-center gap-1.5 py-2">
+          {depth > 0 && <span aria-hidden className="shrink-0" style={{ width: Math.min(depth, 8) * 14 }} />}
           {handle && <span className="-ml-1 flex w-3 justify-center">{handle}</span>}
           <span className="flex w-4 justify-center" onClick={(e) => e.stopPropagation()}>
             <input
@@ -484,7 +552,7 @@ function TaskRow({
           <span className="flex w-4 justify-center">
             {hasSubtasks ? (
               <button
-                onClick={(e) => { e.stopPropagation(); setExpanded((x) => !x); }}
+                onClick={(e) => { e.stopPropagation(); setExpanded({ mode: tree.expandAll, value: !expanded }); }}
                 aria-label={`Subtasks for ${task.name}`}
                 aria-expanded={expanded}
                 className="text-cu-text-tertiary hover:text-cu-text"
@@ -581,30 +649,9 @@ function TaskRow({
       </div>
       </TaskContextMenu>
 
-      {expanded &&
-        task.subtasks.map((sub) => (
-          <TaskContextMenu key={sub.id} task={sub} statuses={statuses} onOpen={() => onOpenTask(sub.id)}>
-          <div
-            className="grid cursor-pointer items-center border-t border-cu-border/40 bg-cu-sidebar/40 px-3 hover:bg-cu-hover/60"
-            style={gridStyle}
-            onClick={() => onOpenTask(sub.id)}
-          >
-            <div className="flex items-center gap-1.5 py-2 pl-8">
-              <StatusControl current={sub.status} statuses={statuses} taskName={sub.name} onChange={(statusId) => onUpdate(sub.id, { statusId })} />
-              <span className="truncate text-[13px] text-cu-text">{sub.name}</span>
-            </div>
-            <div className="py-2">
-              <span onClick={(event) => event.stopPropagation()}>
-                <AssigneeControl assignees={sub.assignees.map((a) => a.user)} onChange={(assigneeIds) => onUpdate(sub.id, { assigneeIds })} />
-              </span>
-            </div>
-            <div />
-            <div />
-            {customFields.map((f) => <div key={f.id} />)}
-            <div />
-          </div>
-          </TaskContextMenu>
-        ))}
+      {expanded && hasSubtasks && (
+        <NestedRows tasks={children} depth={depth + 1} rowProps={{ tree, statuses, customFields, gridStyle, selected, onToggleSelect, onOpenTask, onUpdate }} />
+      )}
     </>
   );
 }

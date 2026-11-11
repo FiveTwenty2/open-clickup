@@ -25,6 +25,7 @@ import type { TaskDetail } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
 import { Priority } from "@/lib/enums";
 import { StatusControl } from "@/components/menus/status-control";
+import { SiblingDrag } from "@/components/task/sibling-drag";
 import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { isCompletedStatus } from "@/lib/task-status";
 import { PriorityControl } from "@/components/menus/priority-control";
@@ -197,8 +198,7 @@ export function TaskModal({
                         </p>
                       )}
                       {visibleSubtasks.map((sub) => (
-                        <TaskContextMenu
-                          key={sub.id}
+                        <SiblingDrag key={sub.id} task={sub}><TaskContextMenu
                           task={sub}
                           statuses={task.list.statuses}
                           onOpen={() => onOpenTask?.(sub.id)}
@@ -213,7 +213,7 @@ export function TaskModal({
                             ))}
                           </div>
                         </div>
-                        </TaskContextMenu>
+                        </TaskContextMenu></SiblingDrag>
                       ))}
                       <SubtaskComposer onSubmit={(name) => addSubtask.mutate(name)} />
                     </div>

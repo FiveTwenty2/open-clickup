@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -32,6 +32,7 @@ import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
 import type { Priority } from "@/lib/enums";
 import { StatusCircle, StatusControl } from "@/components/menus/status-control";
+import { SiblingDrag } from "@/components/task/sibling-drag";
 import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { PriorityFlag, DueDate, TagChip } from "@/components/ui/primitives";
 import { AvatarStack } from "@/components/ui/avatar";
@@ -43,14 +44,28 @@ export function BoardView({
   data,
   onOpenTask,
   groupBy = "status",
-  canReorder = true,
+  canReorder = true, expandSubtasks = false, hideClosedSubtasks = false,
 }: {
   data: ListData;
   onOpenTask: (id: string) => void;
   groupBy?: GroupBy;
   canReorder?: boolean;
+  expandSubtasks?: boolean;
+  hideClosedSubtasks?: boolean;
 }) {
-  const { list, tasks } = data;
+  const { list } = data;
+  const tasks = useMemo(() => hideClosedSubtasks
+    ? data.tasks.filter((task) => !task.parentId || !["DONE", "CLOSED"].includes(task.status.type))
+    : data.tasks, [data.tasks, hideClosedSubtasks]);
+  const children = useMemo(() => {
+    const tree = new Map<string, TaskWithRelations[]>();
+    if (!expandSubtasks) return tree;
+    for (const task of data.allTasks) {
+      if (!task.parentId || (hideClosedSubtasks && ["DONE", "CLOSED"].includes(task.status.type))) continue;
+      tree.set(task.parentId, [...(tree.get(task.parentId) ?? []), task]);
+    }
+    return tree;
+  }, [data.allTasks, expandSubtasks, hideClosedSubtasks]);
   const statuses = list.statuses;
   const firstStatusId = statuses[0]?.id;
   const { workspace } = useWorkspace();
@@ -73,6 +88,13 @@ export function BoardView({
     [tasks, groupBy, statuses, members],
   );
 
+  const originalColumn = useRef<string | undefined>(undefined);
+  const client = useQueryClient();
+  const reorder = useMutation({
+    mutationFn: (input: { taskId: string; targetId: string; placement: "before" | "after" }) =>
+      apiSend(`/api/lists/${list.id}/reorder`, "POST", input),
+    onSettled: () => client.invalidateQueries({ queryKey: ["list", list.id] }),
+  });
   const [columns, setColumns] = useState<Columns>(() => fromGroups(groups));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -106,6 +128,7 @@ export function BoardView({
   }
 
   function onDragStart(e: DragStartEvent) {
+    originalColumn.current = findColumn(String(e.active.id));
     setActiveId(String(e.active.id));
   }
 
@@ -132,7 +155,7 @@ export function BoardView({
     const activeId = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     setActiveId(null);
-    if (!overId) return;
+    if (!overId || activeId === overId) { setColumns(fromGroups(groups)); return; }
     const col = findColumn(activeId);
     if (!col) return;
 
@@ -144,6 +167,14 @@ export function BoardView({
       setColumns((prev) => ({ ...prev, [col]: items }));
     }
 
+    if (originalColumn.current === col && oldIdx >= 0 && overIdx >= 0 && oldIdx !== overIdx) {
+      const moved = items.find((task) => task.id === activeId);
+      const target = items.find((task) => task.id === overId);
+      if (moved && target && moved.parentId === target.parentId) {
+        reorder.mutate({ taskId: activeId, targetId: overId, placement: oldIdx < overIdx ? "after" : "before" });
+      } else setColumns(fromGroups(groups));
+      return;
+    }
     const finalIdx = items.findIndex((t) => t.id === activeId);
     const position = midpoint(items[finalIdx - 1]?.position ?? null, items[finalIdx + 1]?.position ?? null);
     const task = items[finalIdx];
@@ -162,12 +193,14 @@ export function BoardView({
 
   return (
     <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">
+      {reorder.isError && <p role="alert" className="pb-2 text-xs text-cu-urgent">Could not save task order.</p>}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
+        onDragCancel={() => { setActiveId(null); setColumns(fromGroups(groups)); }}
       >
         <div className="flex h-full items-start gap-3">
           {groups.map((group) =>
@@ -187,6 +220,8 @@ export function BoardView({
                 firstStatusId={firstStatusId}
                 status={groupBy === "status" ? statusById.get(group.id) : undefined}
                 statuses={statuses}
+                childrenByParent={children}
+                reorderSubtasks={canReorder}
                 selected={selected}
                 onToggleTask={toggleTask}
                 onOpenTask={onOpenTask}
@@ -235,6 +270,8 @@ function Column({
   firstStatusId,
   status,
   statuses,
+  childrenByParent,
+  reorderSubtasks,
   selected,
   onToggleTask,
   onOpenTask,
@@ -246,6 +283,8 @@ function Column({
   firstStatusId: string | undefined;
   status: StatusModel | undefined;
   statuses: StatusModel[];
+  childrenByParent: Map<string, TaskWithRelations[]>;
+  reorderSubtasks: boolean;
   selected: Set<string>;
   onToggleTask: (taskId: string) => void;
   onOpenTask: (id: string) => void;
@@ -299,12 +338,30 @@ function Column({
           )}
         >
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} statuses={statuses} selected={selected.has(task.id)} onToggle={() => onToggleTask(task.id)} onOpenTask={onOpenTask} />
+            <div key={task.id} className="space-y-1">
+              <SortableCard task={task} statuses={statuses} selected={selected.has(task.id)} onToggle={() => onToggleTask(task.id)} onOpenTask={onOpenTask} />
+              <BoardChildren parentId={task.id} tree={childrenByParent} statuses={statuses} onOpen={onOpenTask} canReorder={reorderSubtasks} />
+            </div>
           ))}
         </div>
       </SortableContext>
     </div>
   );
+}
+
+function BoardChildren({ parentId, tree, statuses, onOpen, canReorder }: {
+  parentId: string; tree: Map<string, TaskWithRelations[]>; statuses: StatusModel[]; onOpen: (id: string) => void; canReorder: boolean;
+}) {
+  const children = tree.get(parentId);
+  if (!children?.length) return null;
+  return <div className="ml-3 space-y-1 border-l border-cu-border pl-2">
+    {children.map((task) => <div key={task.id}>
+      <SiblingDrag task={task} enabled={canReorder}><TaskContextMenu task={task} statuses={statuses} onOpen={() => onOpen(task.id)}>
+        <button className="w-full rounded bg-cu-panel p-2 text-left text-xs hover:bg-cu-hover" onClick={() => onOpen(task.id)}>{task.name}</button>
+      </TaskContextMenu></SiblingDrag>
+      <BoardChildren parentId={task.id} tree={tree} statuses={statuses} onOpen={onOpen} canReorder={canReorder} />
+    </div>)}
+  </div>;
 }
 
 function CollapsedColumn({

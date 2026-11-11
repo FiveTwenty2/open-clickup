@@ -13,6 +13,7 @@ import {
 import { CalendarClock, ChevronDown } from "lucide-react";
 import { useMyTasks, type MyTask } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { StatusCircle } from "@/components/menus/status-control";
 import { PriorityFlag } from "@/components/ui/primitives";
 import type { Priority, StatusType } from "@/lib/enums";
@@ -163,9 +164,10 @@ function DoneSection({ tasks }: { tasks: MyTask[] }) {
 
 function TaskRow({ task, muted }: { task: MyTask; muted?: boolean }) {
   const router = useRouter();
+  const open = () => router.push(`/l/${task.listId}?task=${task.id}`);
   return (
-    <button
-      onClick={() => router.push(`/l/${task.listId}?task=${task.id}`)}
+    <TaskContextMenu task={task} onOpen={open}><button
+      onClick={open}
       className="flex w-full items-center gap-2.5 border-b border-cu-border px-3 py-2 text-left last:border-0 hover:bg-cu-hover"
     >
       <StatusCircle status={{ color: task.status.color, type: task.status.type as StatusType }} size={15} />
@@ -184,6 +186,6 @@ function TaskRow({ task, muted }: { task: MyTask; muted?: boolean }) {
           {format(new Date(task.dueDate), "MMM d")}
         </span>
       )}
-    </button>
+    </button></TaskContextMenu>
   );
 }

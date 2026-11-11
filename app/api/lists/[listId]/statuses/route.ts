@@ -3,7 +3,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { StatusType } from "@/lib/generated/prisma/client";
 import { requireRole } from "@/lib/permissions";
-import { readJson, route } from "@/lib/api-helpers";
+import { requireIntegrationAccess, requireListInWorkspace } from "@/lib/integration-access";
+import { publish } from "@/lib/events";
+import { ApiError, readJson, route } from "@/lib/api-helpers";
 
 type Ctx = { params: Promise<{ listId: string }> };
 
@@ -13,11 +15,19 @@ const createSchema = z.object({
   type: z.enum(["NOT_STARTED", "ACTIVE", "DONE", "CLOSED"]).optional(),
 });
 
+export const GET = route(async (req, { params }: Ctx) => {
+  const { listId } = await params;
+  const { workspaceId } = await requireIntegrationAccess(req);
+  await requireListInWorkspace(listId, workspaceId);
+  return NextResponse.json(await prisma.status.findMany({ where: { listId }, orderBy: { position: "asc" } }));
+});
+
 const reorderSchema = z.object({ ids: z.array(z.string()).min(1) });
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("MEMBER");
+  await requireListInWorkspace(listId, workspaceId);
   const { name, color, type } = await readJson(req, createSchema);
   const last = await prisma.status.findFirst({ where: { listId }, orderBy: { position: "desc" } });
   const status = await prisma.status.create({
@@ -29,16 +39,23 @@ export const POST = route(async (req, { params }: Ctx) => {
       position: (last?.position ?? 0) + 1,
     },
   });
+  publish({ type: "list", listId });
   return NextResponse.json(status, { status: 201 });
 });
 
 export const PUT = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("MEMBER");
+  await requireListInWorkspace(listId, workspaceId);
   const { ids } = await readJson(req, reorderSchema);
+  const existing = await prisma.status.findMany({ where: { listId }, select: { id: true } });
+  if (new Set(ids).size !== existing.length || ids.length !== existing.length || existing.some((status) => !ids.includes(status.id))) {
+    throw new ApiError(400, "Choose every status from this list once");
+  }
   await prisma.$transaction(
-    ids.map((id, i) => prisma.status.update({ where: { id }, data: { position: i } })),
+    ids.map((id, i) => prisma.status.update({ where: { id, listId }, data: { position: i } })),
   );
   const statuses = await prisma.status.findMany({ where: { listId }, orderBy: { position: "asc" } });
+  publish({ type: "list", listId });
   return NextResponse.json(statuses);
 });

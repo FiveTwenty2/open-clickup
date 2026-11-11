@@ -14,9 +14,10 @@ export const GET = route(async () => {
       name: true,
       listId: true,
       priority: true,
+      archived: true,
       startDate: true,
       dueDate: true,
-      status: { select: { name: true, color: true, type: true } },
+      status: { select: { id: true, name: true, color: true, type: true } },
       list: { select: { name: true, space: { select: { name: true, color: true } } } },
     },
   });

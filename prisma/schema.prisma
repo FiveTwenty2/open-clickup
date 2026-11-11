@@ -113,6 +113,7 @@ model Workspace {
   goals     WorkspaceGoal[]
   spaces    Space[]
   templates TaskTemplate[]
+  listTemplates ListTemplate[]
 }
 
 model WorkspaceDocument {
@@ -171,6 +172,17 @@ model WorkspaceInvite {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, email])
+}
+
+model ListTemplate {
+  id String @id @default(cuid())
+  workspaceId String
+  name String
+  snapshot Json
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, name])
 }
 
 model TaskTemplate {

@@ -10,15 +10,16 @@ import {
 } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TaskWithRelations } from "@/lib/queries";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
+import type { StatusModel, TaskWithRelations } from "@/lib/queries";
 import { StatusCircle } from "@/components/menus/status-control";
 import { useCreateTask, useUpdateTask } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
 
 const modes = { day: "Day", four: "4 days", week: "Week", month: "Month" } as const;
 type Mode = keyof typeof modes;
-export type CalendarTask = Pick<TaskWithRelations, "id" | "name" | "listId" | "parentId" | "startDate" | "dueDate"> & {
-  status: Pick<TaskWithRelations["status"], "name" | "color" | "type">;
+export type CalendarTask = Pick<TaskWithRelations, "id" | "name" | "listId" | "parentId" | "startDate" | "dueDate" | "priority" | "archived"> & {
+  status: Pick<TaskWithRelations["status"], "id" | "name" | "color" | "type">;
   assignees: { userId: string }[];
 };
 const keyOf = (date: Date) => format(date, "yyyy-MM-dd");
@@ -31,11 +32,12 @@ function dateOnDay(task: CalendarTask, day: string) {
 }
 
 export function CalendarView({
-  tasks: source, listId, onOpenTask, canSchedule, lists = [],
+  tasks: source, listId, onOpenTask, canSchedule, lists = [], statuses,
 }: {
   tasks: CalendarTask[];
   listId?: string;
   lists?: { id: string; name: string }[];
+  statuses?: StatusModel[];
   onOpenTask: (id: string, listId: string) => void;
   canSchedule: boolean;
 }) {
@@ -182,7 +184,7 @@ export function CalendarView({
                   byHour.set(hour, entries);
                 }
                 const renderTask = (task: CalendarTask) => (
-                  <DraggableTask key={task.id} task={task} day={key} canSchedule={canSchedule} showTime={mode !== "month"} onOpen={() => onOpenTask(task.id, task.listId)} />
+                  <DraggableTask key={task.id} task={task} statuses={statuses} day={key} canSchedule={canSchedule} showTime={mode !== "month"} onOpen={() => onOpenTask(task.id, task.listId)} />
                 );
                 const expanded = expandedDay === key || mode !== "month";
                 return (
@@ -211,9 +213,9 @@ export function CalendarView({
           </div>
           {showQueue && <aside aria-label="Scheduling queue" className="max-h-full w-full overflow-auto border-cu-border p-3 sm:w-56 sm:border-l">
             <h3 className="mb-2 text-sm font-semibold">Unscheduled ({unscheduled.length})</h3>
-            {unscheduled.map((task) => <DraggableTask key={task.id} task={task} canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
+            {unscheduled.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
             <h3 className="mb-2 mt-4 text-sm font-semibold">Overdue ({overdue.length})</h3>
-            {overdue.map((task) => <DraggableTask key={task.id} task={task} day={keyOf(new Date(task.dueDate!))} queue canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
+            {overdue.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} day={keyOf(new Date(task.dueDate!))} queue canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
           </aside>}
         </div>
       </DndContext>
@@ -241,18 +243,18 @@ function HourSlot({ date, hour, onCreate, children }: {
   </div>;
 }
 
-function DraggableTask({ task, day, queue, canSchedule, showTime, onOpen }: {
-  task: CalendarTask; day?: string; queue?: boolean; canSchedule: boolean; showTime?: boolean; onOpen: () => void;
+function DraggableTask({ task, day, queue, canSchedule, showTime, onOpen, statuses }: {
+  task: CalendarTask; day?: string; queue?: boolean; canSchedule: boolean; showTime?: boolean; onOpen: () => void; statuses?: StatusModel[];
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${task.id}:${queue ? "queue" : day ?? "unscheduled"}`, data: { task, day }, disabled: !canSchedule,
   });
   const timing = day && dateOnDay(task, day);
-  return <button ref={setNodeRef} {...listeners} {...attributes} onClick={onOpen}
+  return <TaskContextMenu task={task} statuses={statuses} onOpen={onOpen}><button ref={setNodeRef} {...listeners} {...attributes} onClick={onOpen}
     className={cn("relative flex w-full min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left text-xs", canSchedule && "touch-none cursor-grab", isDragging && "z-30 opacity-50")}
     style={{ backgroundColor: `${task.status.color}1f`, transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}>
     <StatusCircle status={task.status} size={10} />
     {showTime && timing && <span className="shrink-0 text-cu-text-secondary">{format(new Date(timing), "HH:mm")}</span>}
     <span className="truncate">{task.name}</span>
-  </button>;
+  </button></TaskContextMenu>;
 }

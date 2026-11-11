@@ -1,3 +1,4 @@
+import { ApiError } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
 import { StatusType, ViewType } from "@/lib/generated/prisma/client";
 
@@ -15,6 +16,14 @@ const DEFAULT_VIEWS = [
   { name: "Gantt", type: ViewType.GANTT },
   { name: "Table", type: ViewType.TABLE },
 ];
+
+export async function validateListLocation(workspaceId: string, spaceId: string, folderId?: string | null) {
+  const space = await prisma.space.findFirst({
+    where: { id: spaceId, workspaceId, ...(folderId && { folders: { some: { id: folderId } } }) },
+    select: { id: true },
+  });
+  if (!space) throw new ApiError(404, "List location not found");
+}
 
 const LIST_COLORS = ["#7b68ee", "#fd71af", "#ff7800", "#2ecd6f", "#0ab1e8", "#9b59b6"];
 

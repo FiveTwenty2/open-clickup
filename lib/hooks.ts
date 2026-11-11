@@ -52,6 +52,7 @@ export function useRealtime() {
         const event = JSON.parse(e.data) as { type: string; listId?: string };
         if (event.type === "list" && event.listId) {
           qc.invalidateQueries({ queryKey: ["list", event.listId] });
+          qc.invalidateQueries({ queryKey: ["task-menu-statuses", event.listId] });
           qc.invalidateQueries({ queryKey: ["task"] });
           qc.invalidateQueries({ queryKey: ["my-tasks"] });
           qc.invalidateQueries({ queryKey: ["recovery"] });
@@ -116,10 +117,11 @@ export type MyTask = {
   id: string;
   name: string;
   listId: string;
-  priority: string | null;
+  priority: TaskWithRelations["priority"];
+  archived: boolean;
   startDate: string | null;
   dueDate: string | null;
-  status: { name: string; color: string; type: string };
+  status: Pick<TaskWithRelations["status"], "id" | "name" | "color" | "type">;
   list: { name: string; space: { name: string; color: string } };
 };
 
@@ -267,6 +269,11 @@ export function useUpdateTask(listId: string | undefined) {
         const status = prev.list.statuses.find((item) => item.id === patch.statusId);
         qc.setQueryData<ListData>(["list", listId], {
           ...prev,
+          allTasks: prev.allTasks.map((task) => {
+            if (task.id !== taskId) return task;
+            const next = applyOptimistic(task, patch);
+            return status ? { ...next, status, completedAt: isCompletedStatus(status.type) ? task.completedAt ?? new Date() : null } : next;
+          }),
           tasks: prev.tasks.map((task) => {
             if (task.id === taskId) {
               const next = applyOptimistic(task, patch);

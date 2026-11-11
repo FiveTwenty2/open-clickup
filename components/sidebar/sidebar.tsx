@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
+import * as ContextMenu from "@radix-ui/react-context-menu";
+import { HierarchyDragRow } from "@/components/sidebar/hierarchy-drag";
+import { ListTemplatesDialog, type ListTemplateTarget } from "@/components/views/list-templates";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   ChevronRight,
@@ -45,6 +48,7 @@ import { Avatar } from "@/components/ui/avatar";
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
   const { workspace, favorites, currentUser } = useWorkspace();
   const { createSpace } = useHierarchy();
+  const [template, setTemplate] = useState<ListTemplateTarget | null>(null);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
@@ -145,7 +149,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
 
       <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-3">
         {workspace.spaces.map((space) => (
-          <SpaceItem key={space.id} space={space} />
+          <SpaceItem key={space.id} space={space} onTemplate={setTemplate} />
         ))}
         {creatingSpace && (
           <InlineInput
@@ -160,6 +164,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
         )}
       </div>
 
+      {template && <ListTemplatesDialog target={template} onClose={() => setTemplate(null)} />}
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-cu-border px-3 py-2">
         <UserSwitcher />
@@ -255,7 +260,7 @@ function UserSwitcher() {
   );
 }
 
-function SpaceItem({ space }: { space: SpaceNode }) {
+function SpaceItem({ space, onTemplate }: { space: SpaceNode; onTemplate: (target: ListTemplateTarget) => void }) {
   const router = useRouter();
   const { createList, createFolder, rename, remove } = useHierarchy();
   const [open, setOpen] = useState(true);
@@ -284,7 +289,13 @@ function SpaceItem({ space }: { space: SpaceNode }) {
 
   return (
     <div className="select-none">
-      <Row
+      <HierarchyDragRow kind="space" id={space.id} name={space.name}>
+      <SidebarContext actions={[
+        { label: "New List", run: () => { setOpen(true); setCreating("list"); } },
+        { label: "New Folder", run: () => { setOpen(true); setCreating("folder"); } },
+        { label: "New List from template", run: () => onTemplate({ spaceId: space.id }) },
+        { label: "Rename space", run: () => setRenaming(true) },
+      ]}><div><Row
         depth={0}
         open={open}
         onToggle={() => setOpen((o) => !o)}
@@ -301,17 +312,18 @@ function SpaceItem({ space }: { space: SpaceNode }) {
         addMenu={
           <>
             <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating("list"); }} />
+            <MenuItem icon={<FileText className="h-4 w-4" />} label="New List from template" onSelect={() => onTemplate({ spaceId: space.id })} />
             <MenuItem icon={<FolderPlus className="h-4 w-4" />} label="New Folder" onSelect={() => { setOpen(true); setCreating("folder"); }} />
           </>
         }
-      />
+      /></div></SidebarContext></HierarchyDragRow>
       {open && (
         <div>
           {space.folders.map((folder) => (
-            <FolderItem key={folder.id} folder={folder} />
+            <FolderItem key={folder.id} folder={folder} onTemplate={onTemplate} />
           ))}
           {space.lists.map((list) => (
-            <ListItemRow key={list.id} list={list} depth={1} />
+            <ListItemRow key={list.id} list={list} depth={1} onTemplate={onTemplate} />
           ))}
           {creating === "list" && (
             <InlineInput
@@ -344,7 +356,7 @@ function SpaceItem({ space }: { space: SpaceNode }) {
   );
 }
 
-function FolderItem({ folder }: { folder: FolderNode }) {
+function FolderItem({ folder, onTemplate }: { folder: FolderNode; onTemplate: (target: ListTemplateTarget) => void }) {
   const router = useRouter();
   const { createList, rename, remove } = useHierarchy();
   const [open, setOpen] = useState(false);
@@ -368,7 +380,12 @@ function FolderItem({ folder }: { folder: FolderNode }) {
 
   return (
     <div>
-      <Row
+      <HierarchyDragRow kind="folder" id={folder.id} name={folder.name}>
+      <SidebarContext actions={[
+        { label: "New List", run: () => { setOpen(true); setCreating(true); } },
+        { label: "New List from template", run: () => onTemplate({ spaceId: folder.spaceId, folderId: folder.id }) },
+        { label: "Rename folder", run: () => setRenaming(true) },
+      ]}><div><Row
         depth={1}
         open={open}
         onToggle={() => setOpen((o) => !o)}
@@ -377,12 +394,15 @@ function FolderItem({ folder }: { folder: FolderNode }) {
         label={folder.name}
         onRename={() => setRenaming(true)}
         onDelete={() => remove.mutate({ kind: "folders", id: folder.id })}
-        onAdd={() => { setOpen(true); setCreating(true); }}
-      />
+        addMenu={<>
+          <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating(true); }} />
+          <MenuItem icon={<FileText className="h-4 w-4" />} label="New List from template" onSelect={() => onTemplate({ spaceId: folder.spaceId, folderId: folder.id })} />
+        </>}
+      /></div></SidebarContext></HierarchyDragRow>
       {open && (
         <>
           {folder.lists.map((list) => (
-            <ListItemRow key={list.id} list={list} depth={2} />
+            <ListItemRow key={list.id} list={list} depth={2} onTemplate={onTemplate} />
           ))}
           {creating && (
             <InlineInput
@@ -403,7 +423,7 @@ function FolderItem({ folder }: { folder: FolderNode }) {
   );
 }
 
-function ListItemRow({ list, depth }: { list: ListNode & { spaceId?: string }; depth: number }) {
+function ListItemRow({ list, depth, onTemplate }: { list: ListNode; depth: number; onTemplate: (target: ListTemplateTarget) => void }) {
   const params = useParams();
   const router = useRouter();
   const { rename } = useHierarchy();
@@ -436,7 +456,14 @@ function ListItemRow({ list, depth }: { list: ListNode & { spaceId?: string }; d
   }
 
   return (
-    <div className={cn(
+    <HierarchyDragRow kind="list" id={list.id} name={list.name}>
+    <SidebarContext actions={[
+      { label: "Open list", run: () => router.push(`/l/${list.id}`), readOnly: true },
+      { label: "Rename list", run: () => setRenaming(true) },
+      { label: "Task statuses", run: () => router.push(`/l/${list.id}?settings=statuses`) },
+      { label: "Save or update list template", run: () => onTemplate({ sourceListId: list.id }) },
+      { label: "Archive list", run: () => archive.mutate() },
+    ]}><div className={cn(
         "group flex items-center gap-2 rounded-md py-1.5 pr-2 text-[13px]",
         active ? "bg-cu-sidebar-active font-medium text-cu-purple-dark" : "text-cu-text hover:bg-cu-hover-strong",
       )}
@@ -452,11 +479,25 @@ function ListItemRow({ list, depth }: { list: ListNode & { spaceId?: string }; d
       </Link>
       <span className="ml-auto flex items-center gap-1">
         <span className="hidden text-[11px] text-cu-text-tertiary group-hover:inline">{list._count.tasks}</span>
-        {canWrite && <RowMenu label={`Options for ${list.name}`} onRename={() => setRenaming(true)} onArchive={() => archive.mutate()} />}
+        {canWrite && <RowMenu label={`Options for ${list.name}`} onRename={() => setRenaming(true)} onArchive={() => archive.mutate()} onTemplate={() => onTemplate({ sourceListId: list.id })} />}
         {archive.isError && <span role="alert" className="text-xs text-cu-urgent">Archive failed</span>}
       </span>
-    </div>
+    </div></SidebarContext></HierarchyDragRow>
   );
+}
+
+function SidebarContext({ actions, children }: { actions: { label: string; run: () => void; readOnly?: boolean }[]; children: ReactElement }) {
+  const { workspace, currentUser } = useWorkspace();
+  const canWrite = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
+  const available = actions.filter((action) => action.readOnly || canWrite);
+  if (!available.length) return children;
+  return <ContextMenu.Root>
+    <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+    <ContextMenu.Portal><ContextMenu.Content className="z-[60] min-w-44 rounded border border-cu-border bg-cu-panel p-1 shadow-lg">
+      {available.map(({ label, run }) => <ContextMenu.Item key={label} onSelect={run}
+        className="cursor-pointer rounded px-2 py-1.5 text-sm outline-none focus:bg-cu-hover">{label}</ContextMenu.Item>)}
+    </ContextMenu.Content></ContextMenu.Portal>
+  </ContextMenu.Root>;
 }
 
 function Row({
@@ -492,7 +533,7 @@ function Row({
       <button onClick={onToggle} className="flex h-4 w-4 items-center justify-center text-cu-text-tertiary">
         {hasChildren ? (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />) : null}
       </button>
-      <button onClick={onToggle} onDoubleClick={onRename} className="flex min-w-0 flex-1 items-center gap-1.5">
+      <button aria-label={label} onClick={onToggle} onDoubleClick={onRename} className="flex min-w-0 flex-1 items-center gap-1.5">
         {leading}
         <span className={cn("truncate", bold && "font-semibold")}>{label}</span>
       </button>
@@ -519,7 +560,7 @@ function Row({
   );
 }
 
-function RowMenu({ label = "Options", onRename, onDelete, onArchive }: { label?: string; onRename?: () => void; onDelete?: () => void; onArchive?: () => void }) {
+function RowMenu({ label = "Options", onRename, onDelete, onArchive, onTemplate }: { label?: string; onRename?: () => void; onDelete?: () => void; onArchive?: () => void; onTemplate?: () => void }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -534,6 +575,7 @@ function RowMenu({ label = "Options", onRename, onDelete, onArchive }: { label?:
       <DropdownMenu.Portal>
         <DropdownMenu.Content sideOffset={4} align="end" className="z-50 min-w-[150px] rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg">
           {onRename && <MenuItem icon={<Pencil className="h-4 w-4" />} label="Rename" onSelect={onRename} />}
+          {onTemplate && <MenuItem icon={<FileText className="h-4 w-4" />} label="Save or update list template" onSelect={onTemplate} />}
           {onArchive && <MenuItem icon={<Archive className="h-4 w-4" />} label="Archive list" onSelect={onArchive} />}
           {onDelete && <MenuItem icon={<Trash2 className="h-4 w-4" />} label="Delete" onSelect={onDelete} danger />}
         </DropdownMenu.Content>

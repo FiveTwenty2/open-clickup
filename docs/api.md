@@ -55,5 +55,12 @@ These endpoints use the signed-in browser session.
 ## List archive, manual order, and calendar
 
 - `PATCH /api/lists/:id` accepts `{ "archived": true }` to archive a list and `false` to restore it. `GET /api/lists/archive?q=&page=0` lists archived lists.
-- `POST /api/lists/:id/reorder` accepts `taskId`, `targetId`, and `placement` (`before` or `after`) for active top-level tasks in the same list.
+- `POST /api/lists/:id/reorder` accepts `taskId`, `targetId`, and `placement` (`before` or `after`) for active tasks sharing a parent (including top-level tasks) in the same list.
 - `GET /api/workspace/calendar` returns calendar tasks across active lists. Use `list=<listId>` to narrow the result. `POST /api/tasks` accepts an optional ISO 8601 `dueDate` to create a scheduled task.
+
+
+## Sidebar hierarchy and list templates
+
+- `POST /api/hierarchy/reorder` accepts `source` and `target` objects with `kind` (`space`, `folder`, or `list`) and `id`, plus `placement` (`before`, `after`, or `inside`). Reorder spaces within the workspace, reorder folders within a space, or move lists into a space or folder.
+- `GET /api/list-templates` lists workspace templates. `POST` creates one with `sourceListId`, `name`, and optional `includeTasks`. `PATCH` accepts the same fields plus `id` and replaces that template.
+- `PUT /api/list-templates` creates a new list from `templateId`, `name`, `spaceId`, and optional `folderId`. Options are `includeTasks` (default true), `includeDates`, and `includeAutomations` (both default false).

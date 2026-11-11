@@ -18,6 +18,9 @@ export type ViewState = {
   };
   sort: { field: SortField; dir: "asc" | "desc" };
   groupBy: GroupBy;
+  subtasks?: "collapsed" | "expanded" | "separate";
+  hideClosedSubtasks?: boolean;
+  statusIds?: string[];
 };
 
 export const EMPTY_VIEW_STATE: ViewState = {
@@ -45,6 +48,8 @@ export function applyViewState(
   let out = tasks;
   const { priorities, assignees, tags, completion } = vs.filters;
 
+  const statuses = new Set(vs.statusIds);
+  if (statuses.size) out = out.filter((task) => statuses.has(task.statusId));
   if (completion && completion !== "all") {
     out = out.filter((task) => isCompletedStatus(task.status.type) === (completion === "closed"));
   }

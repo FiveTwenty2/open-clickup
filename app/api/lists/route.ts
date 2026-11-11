@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createListWithDefaults } from "@/lib/hierarchy";
+import { createListWithDefaults, validateListLocation } from "@/lib/hierarchy";
 import { requireRole } from "@/lib/permissions";
 import { readJson, route } from "@/lib/api-helpers";
 
@@ -11,8 +11,9 @@ const schema = z.object({
 });
 
 export const POST = route(async (req) => {
-  await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("MEMBER");
   const { spaceId, folderId, name } = await readJson(req, schema);
+  await validateListLocation(workspaceId, spaceId, folderId);
   const list = await createListWithDefaults({ spaceId, folderId: folderId ?? null, name });
   return NextResponse.json(list, { status: 201 });
 });

@@ -22,14 +22,19 @@ export const POST = route(async (req, { params }: Ctx) => {
       FOR UPDATE OF l
     `;
     if (!locked.length) throw new ApiError(404, "Active list not found");
+    const source = await tx.task.findFirst({
+      where: { id: taskId, listId, archived: false, deletedAt: null },
+      select: { parentId: true },
+    });
+    if (!source) throw new ApiError(409, "The task moved or is no longer available");
     const rows = await tx.task.findMany({
-      where: { listId, parentId: null, archived: false, deletedAt: null },
+      where: { listId, parentId: source.parentId, archived: false, deletedAt: null },
       orderBy: [{ position: "asc" }, { id: "asc" }], select: { id: true, position: true },
     });
     const task = rows.find((row) => row.id === taskId);
     const ordered = rows.filter((row) => row.id !== taskId);
     const target = ordered.findIndex((row) => row.id === targetId);
-    if (!task || target < 0) throw new ApiError(409, "One of these tasks moved or is no longer available");
+    if (!task || target < 0) throw new ApiError(409, "Tasks can only be reordered among siblings");
     const index = target + Number(placement === "after");
     const previous = ordered[index - 1]?.position ?? null;
     const next = ordered[index]?.position ?? null;
@@ -43,7 +48,7 @@ export const POST = route(async (req, { params }: Ctx) => {
         const values = ordered.slice(offset, offset + 1000).map((row, i) => Prisma.sql`(${row.id}, ${(offset + i + 1) * 1000}::double precision)`);
         await tx.$executeRaw`
           UPDATE "Task" t SET position = r.position FROM (VALUES ${Prisma.join(values)}) AS r(id, position)
-          WHERE t.id = r.id AND t."listId" = ${listId} AND t."deletedAt" IS NULL AND NOT t.archived
+          WHERE t.id = r.id AND t."listId" = ${listId} AND t."deletedAt" IS NULL AND NOT t.archived AND t."parentId" IS NOT DISTINCT FROM ${source.parentId}::text
         `;
       }
     }

@@ -45,10 +45,10 @@ export async function getWorkspaceTree(workspaceId: string) {
     include: {
       members: { include: { user: { select: userSelect } } },
       spaces: {
-        orderBy: { position: "asc" },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
         include: {
           folders: {
-            orderBy: { position: "asc" },
+            orderBy: [{ position: "asc" }, { id: "asc" }],
             include: {
               lists: {
                 where: { archivedAt: null },
@@ -94,11 +94,13 @@ export async function getListData(listId: string) {
   });
   if (!list) return null;
 
-  const tasks = await prisma.task.findMany({
-    where: { listId, parentId: null, archived: false, deletedAt: null },
+  const allTasks = await prisma.task.findMany({
+    where: { listId, archived: false, deletedAt: null },
     orderBy: [{ position: "asc" }, { id: "asc" }],
     include: taskInclude,
   });
+
+  const tasks = allTasks.filter((task) => task.parentId === null);
 
   // dependency edges between visible tasks (for Gantt arrows)
   const taskIds = tasks.map((t) => t.id);
@@ -109,7 +111,7 @@ export async function getListData(listId: string) {
       })
     : [];
 
-  return { list, tasks, dependencies };
+  return { list, tasks, allTasks, dependencies };
 }
 
 export type ListData = NonNullable<Awaited<ReturnType<typeof getListData>>>;

@@ -10,6 +10,7 @@ import {
   startOfDay,
   addDays,
 } from "date-fns";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { cn } from "@/lib/utils";
 import type { ListData, TaskWithRelations } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
@@ -152,14 +153,15 @@ export function GanttView({
         {/* rows */}
         <div className="relative">
           {tasks.map((task) => (
+            <TaskContextMenu key={task.id} task={task} statuses={data.list.statuses} onOpen={() => onOpenTask(task.id)}><div>
             <GanttRow
-              key={task.id}
               task={task}
               start={start}
               days={days}
               onOpenTask={onOpenTask}
               onReschedule={reschedule}
             />
+            </div></TaskContextMenu>
           ))}
           {arrows.length > 0 && (
             <svg
@@ -237,6 +239,7 @@ function GanttRow({
   }
 
   function beginDrag(mode: DragMode, ev: React.PointerEvent) {
+    if (ev.button !== 0) return;
     if (!s || !e) return;
     ev.preventDefault();
     ev.stopPropagation();

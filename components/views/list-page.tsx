@@ -16,14 +16,16 @@ import {
   ClipboardList,
   SearchX,
 } from "lucide-react";
+import { isCompletedStatus } from "@/lib/task-status";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListTemplatesDialog } from "@/components/views/list-templates";
 import { TemplatePicker } from "@/components/views/template-picker";
 import { useList, useCreateTask, useToggleFavorite } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
 import { apiSend } from "@/lib/api";
 import { ViewType } from "@/lib/enums";
-import { EMPTY_VIEW_STATE, applyViewState, countActiveFilters, type ViewState } from "@/lib/view-state";
+import { EMPTY_VIEW_STATE, applyViewState, type ViewState } from "@/lib/view-state";
 import { FilterMenu, SortMenu, GroupMenu } from "@/components/views/filter-sort";
 import { ListView } from "@/components/views/list-view";
 import { BoardView } from "@/components/views/board-view";
@@ -63,6 +65,9 @@ function vsFromConfig(config: unknown): ViewState {
       },
       sort: { field: c.sort?.field ?? null, dir: c.sort?.dir ?? "asc" },
       groupBy: c.groupBy ?? "status",
+      subtasks: c.subtasks ?? "collapsed",
+      hideClosedSubtasks: c.hideClosedSubtasks ?? false,
+      statusIds: Array.isArray(c.statusIds) ? c.statusIds : [],
     };
   }
   return EMPTY_VIEW_STATE;
@@ -78,9 +83,11 @@ export function ListPage({ listId }: { listId: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const taskParam = searchParams.get("task");
+  const viewParam = searchParams.get("view");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [statusMgr, setStatusMgr] = useState(false);
+  const [listTemplate, setListTemplate] = useState(false);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [csvImport, setCsvImport] = useState(false);
   const [automations, setAutomations] = useState(false);
@@ -110,14 +117,20 @@ export function ListPage({ listId }: { listId: string }) {
   // initialize the active view + load its persisted config once data arrives
   useEffect(() => {
     if (!activeViewId && views.length) {
-      setActiveViewId(views[0].id);
-      setVs(vsFromConfig(views[0].config));
+      const initial = views.find((view) => view.id === viewParam) ?? views[0];
+      setActiveViewId(initial.id);
+      setVs(vsFromConfig(initial.config));
     }
-  }, [views, activeViewId]);
+  }, [views, activeViewId, viewParam]);
 
   function selectView(view: { id: string; config: unknown }) {
     setActiveViewId(view.id);
-    setVs(vsFromConfig(view.config)); // load — does NOT trigger a save
+    setVs(vsFromConfig(view.config));
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("view")) {
+      params.set("view", view.id);
+      window.history.replaceState(null, "", `${pathname}?${params}`);
+    }
   }
 
   const createView = useMutation({
@@ -147,19 +160,29 @@ export function ListPage({ listId }: { listId: string }) {
 
   function closeTask() {
     setOpenTaskId(null);
-    if (taskParam) router.replace(pathname);
+    if (taskParam) {
+      const params = new URLSearchParams(searchParams);
+      params.delete("task");
+      params.delete("comment");
+      router.replace(params.size ? `${pathname}?${params}` : pathname);
+    }
   }
 
   const shownData = useMemo(
     () => {
       if (!data) return data;
       const term = query.trim().toLocaleLowerCase();
-      const tasks = term ? data.tasks.filter((task) =>
+      const expandedRows = vs.subtasks === "expanded" && (activeView?.type === "TABLE" || activeView?.type === "GANTT");
+      const useAll = vs.subtasks === "separate" || expandedRows;
+      const source = useAll && activeView?.type !== "CALENDAR"
+        ? data.allTasks.filter((task) => !vs.hideClosedSubtasks || !task.parentId || !isCompletedStatus(task.status.type))
+        : data.tasks;
+      const tasks = term ? source.filter((task) =>
         task.name.toLocaleLowerCase().includes(term)
-          || task.subtasks.some((subtask) => subtask.name.toLocaleLowerCase().includes(term))) : data.tasks;
+          || (vs.subtasks !== "separate" && task.subtasks.some((subtask) => subtask.name.toLocaleLowerCase().includes(term)))) : source;
       return { ...data, tasks: applyViewState(tasks, vs) };
     },
-    [data, query, vs],
+    [data, query, vs, activeView?.type],
   );
 
   async function addTask() {
@@ -238,6 +261,8 @@ export function ListPage({ listId }: { listId: string }) {
               >
                 Edit statuses
               </DropdownMenu.Item>
+              {canWrite && <DropdownMenu.Item onSelect={() => setListTemplate(true)}
+                className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">Save or update list template</DropdownMenu.Item>}
               <DropdownMenu.Item
                 onSelect={() => setTemplatePicker(true)}
                 className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover"
@@ -258,8 +283,11 @@ export function ListPage({ listId }: { listId: string }) {
       <div className="flex items-center justify-between border-b border-cu-border px-3">
         <div className="flex items-center gap-0.5">
           {list.views.map((v) => (
-            <button
-              key={v.id}
+            <ViewOptions key={v.id} view={v} active={activeView?.id === v.id} canEdit={canWrite} isDefault={v.id === views[0]?.id} allowDelete={views.length > 1}
+              selectView={(view) => {
+                if (view) selectView(view);
+                else if (v.id === activeView?.id) setActiveViewId(null);
+              }} tab={<button
               onClick={() => selectView(v)}
               className={cn(
                 "flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] transition-colors",
@@ -270,12 +298,8 @@ export function ListPage({ listId }: { listId: string }) {
             >
               {VIEW_ICON[v.type]}
               {v.name}
-            </button>
+            </button>} />
           ))}
-          {activeView && <ViewOptions key={activeView.id} view={activeView} allowDelete={views.length > 1} selectView={(view) => {
-            if (view) selectView(view);
-            else setActiveViewId(null);
-          }} />}
           <Popover.Root open={addingView} onOpenChange={setAddingView}>
             <Popover.Trigger asChild>
               <button className="flex items-center gap-1 px-2 py-2 text-[13px] text-cu-text-tertiary hover:text-cu-text" aria-label="Add view">
@@ -307,6 +331,27 @@ export function ListPage({ listId }: { listId: string }) {
           >
             <Users className="h-4 w-4" /> <span className="hidden sm:inline">Assigned to me</span>
           </button>
+          {activeView?.type !== "CALENDAR" && <select aria-label="Display subtasks" className="rounded bg-cu-panel px-1 py-1 text-xs"
+            value={vs.subtasks ?? "collapsed"} onChange={(event) => updateVs({ ...vs, subtasks: event.target.value as ViewState["subtasks"] })}>
+            <option value="collapsed">Collapse all subtasks</option>
+            <option value="expanded">Expand all subtasks</option>
+            <option value="separate">Subtasks as separate tasks</option>
+          </select>}
+          <Popover.Root>
+            <Popover.Trigger asChild><button className="rounded px-2 py-1 text-xs hover:bg-cu-hover">Statuses{vs.statusIds?.length ? ` (${vs.statusIds.length})` : ""}</button></Popover.Trigger>
+            <Popover.Portal><Popover.Content align="end" className="z-50 grid gap-2 rounded border border-cu-border bg-cu-panel p-3 text-xs shadow">
+              {list.statuses.map((status) => <label key={status.id} className="flex items-center gap-2">
+                <input type="checkbox" checked={vs.statusIds?.includes(status.id) ?? false} onChange={(event) => {
+                  const ids = vs.statusIds ?? [];
+                  updateVs({ ...vs, statusIds: event.target.checked ? [...ids, status.id] : ids.filter((id) => id !== status.id) });
+                }} />{status.name}
+              </label>)}
+              <button className="text-left text-cu-purple" onClick={() => updateVs({ ...vs, statusIds: [] })}>Show all statuses</button>
+              {activeView?.type !== "CALENDAR" && <label className="flex gap-2"><input type="checkbox" checked={vs.hideClosedSubtasks ?? false}
+                onChange={(event) => updateVs({ ...vs, hideClosedSubtasks: event.target.checked })} />Hide closed subtasks</label>}
+              {canWrite && <button className="text-left text-cu-purple" onClick={() => setStatusMgr(true)}>Manage statuses</button>}
+            </Popover.Content></Popover.Portal>
+          </Popover.Root>
           <GroupMenu state={vs} onChange={updateVs} />
           <FilterMenu state={vs} onChange={updateVs} tasks={data.tasks} />
           <SortMenu state={vs} onChange={updateVs} />
@@ -355,9 +400,9 @@ export function ListPage({ listId }: { listId: string }) {
         )
       ) : (
         <>
-          {activeView?.type === "LIST" && <ListView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field && !query.trim() && !countActiveFilters(vs)} />}
-          {activeView?.type === "BOARD" && <BoardView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field && !query.trim() && !countActiveFilters(vs)} />}
-          {activeView?.type === "CALENDAR" && <CalendarView listId={listId} tasks={shownData!.tasks.flatMap((task) => [task, ...task.subtasks])} onOpenTask={setOpenTaskId} canSchedule={canWrite && !list.archivedAt} />}
+          {activeView?.type === "LIST" && <ListView subtasks={vs.subtasks} hideClosedSubtasks={vs.hideClosedSubtasks} data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field} />}
+          {activeView?.type === "BOARD" && <BoardView expandSubtasks={vs.subtasks === "expanded"} hideClosedSubtasks={vs.hideClosedSubtasks} data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field} />}
+          {activeView?.type === "CALENDAR" && <CalendarView statuses={list.statuses} listId={listId} tasks={applyViewState(data.allTasks, vs).filter((task) => !query.trim() || task.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))} onOpenTask={setOpenTaskId} canSchedule={canWrite && !list.archivedAt} />}
           {activeView?.type === "GANTT" && <GanttView data={shownData!} onOpenTask={setOpenTaskId} />}
           {activeView?.type === "TABLE" && <TableView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
         </>
@@ -366,8 +411,9 @@ export function ListPage({ listId }: { listId: string }) {
       {openTaskId && (
         <TaskModal taskId={openTaskId} commentId={openTaskId === taskParam ? searchParams.get("comment") : null} listId={listId} onClose={closeTask} onOpenTask={setOpenTaskId} />
       )}
-      {statusMgr && (
-        <StatusManager listId={listId} statuses={data.list.statuses} onClose={() => setStatusMgr(false)} />
+      {listTemplate && <ListTemplatesDialog target={{ sourceListId: listId }} onClose={() => setListTemplate(false)} />}
+      {canWrite && (statusMgr || searchParams.get("settings") === "statuses") && (
+        <StatusManager listId={listId} statuses={data.list.statuses} onClose={() => { setStatusMgr(false); if (searchParams.has("settings")) router.replace(pathname); }} />
       )}
       {templatePicker && (
         <TemplatePicker

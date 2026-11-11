@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
-import { readJson, route } from "@/lib/api-helpers";
+import { ApiError, readJson, route } from "@/lib/api-helpers";
 
 const schema = z.object({
   spaceId: z.string().min(1),
@@ -10,8 +10,10 @@ const schema = z.object({
 });
 
 export const POST = route(async (req) => {
-  await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("MEMBER");
   const { spaceId, name } = await readJson(req, schema);
+  const space = await prisma.space.findFirst({ where: { id: spaceId, workspaceId }, select: { id: true } });
+  if (!space) throw new ApiError(404, "Space not found");
   const last = await prisma.folder.findFirst({ where: { spaceId }, orderBy: { position: "desc" } });
   const folder = await prisma.folder.create({
     data: { spaceId, name, position: (last?.position ?? 0) + 1000 },

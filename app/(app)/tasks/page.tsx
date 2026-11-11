@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspace } from "@/components/workspace-context";
 import { apiGet } from "@/lib/api";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { StatusCircle } from "@/components/menus/status-control";
 import type { getWorkspaceTasks } from "@/lib/workspace-tasks";
 
@@ -60,7 +61,7 @@ function TaskExplorer() {
     {query.isError && <p role="alert">Could not load tasks for these filters.</p>}
     {query.data?.tasks.length === 0 && <p className="text-sm text-cu-text-secondary">No tasks match your filters.</p>}
     <ul className="divide-y divide-cu-border">
-      {query.data?.tasks.map((task) => <li key={task.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+      {query.data?.tasks.map((task) => <TaskContextMenu key={task.id} task={task} onOpen={() => router.push(`/l/${task.listId}?task=${task.id}`)}><li className="flex items-center justify-between gap-3 py-3 text-sm">
         <Link className="flex min-w-0 items-center gap-2 hover:underline" href={`/l/${task.listId}?task=${task.id}`}>
           <StatusCircle status={task.status} className="shrink-0" />
           <span className="min-w-0"><span className="block truncate font-medium">{task.name}</span><span className="text-xs text-cu-text-secondary">
@@ -71,7 +72,7 @@ function TaskExplorer() {
           <div>{task.assignees.map(({ user }) => user.name).join(", ") || "Unassigned"}</div>
           {task.dueDate && <time dateTime={String(task.dueDate)}>{new Date(task.dueDate).toLocaleDateString()}</time>}
         </div>
-      </li>)}
+      </li></TaskContextMenu>)}
     </ul>
     {(page > 0 || query.data?.hasNext) && <div className="mt-3 flex gap-2">
       <button className={control} disabled={page < 1} onClick={() => setFilter("page", String(page - 1))}>Previous</button>

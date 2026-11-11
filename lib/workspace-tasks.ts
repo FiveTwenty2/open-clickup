@@ -27,8 +27,8 @@ export async function getWorkspaceTasks(workspaceId: string, filters: WorkspaceT
     take: 51,
     skip: filters.page * 50,
     select: {
-      id: true, name: true, listId: true, dueDate: true,
-      status: { select: { name: true, color: true, type: true } },
+      id: true, name: true, listId: true, dueDate: true, priority: true, archived: true,
+      status: { select: { id: true, name: true, color: true, type: true } },
       parent: { select: { name: true } },
       list: { select: { name: true, space: { select: { name: true } } } },
       assignees: { select: { user: { select: { id: true, name: true } } } },
