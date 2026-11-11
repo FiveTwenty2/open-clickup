@@ -345,7 +345,7 @@ export function ListPage({ listId }: { listId: string }) {
       )}
 
       {openTaskId && (
-        <TaskModal taskId={openTaskId} listId={listId} onClose={closeTask} onOpenTask={setOpenTaskId} />
+        <TaskModal taskId={openTaskId} commentId={openTaskId === taskParam ? searchParams.get("comment") : null} listId={listId} onClose={closeTask} onOpenTask={setOpenTaskId} />
       )}
       {statusMgr && (
         <StatusManager listId={listId} statuses={data.list.statuses} onClose={() => setStatusMgr(false)} />

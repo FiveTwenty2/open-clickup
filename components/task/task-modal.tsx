@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -48,11 +48,13 @@ export function TaskModal({
   listId,
   onClose,
   onOpenTask,
+  commentId,
 }: {
   taskId: string;
   listId: string;
   onClose: () => void;
   onOpenTask?: (id: string) => void;
+  commentId?: string | null;
 }) {
   const qc = useQueryClient();
   const { currentUser, workspace } = useWorkspace();
@@ -61,6 +63,12 @@ export function TaskModal({
     queryKey: ["task", taskId],
     queryFn: () => apiGet<TaskDetail>(`/api/tasks/${taskId}`),
   });
+  const commentsLoaded = Boolean(task);
+  useEffect(() => {
+    if (!commentId || !commentsLoaded) return;
+    const frame = requestAnimationFrame(() => document.getElementById("comment-" + commentId)?.scrollIntoView({ block: "center" }));
+    return () => cancelAnimationFrame(frame);
+  }, [commentId, commentsLoaded]);
   const [showClosedSubtasks, setShowClosedSubtasks] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const subtasks = task?.subtasks ?? [];
@@ -76,11 +84,6 @@ export function TaskModal({
 
   const update = useMutation({
     mutationFn: (patch: TaskPatch) => apiSend<TaskDetail>(`/api/tasks/${taskId}`, "PATCH", patch),
-    onSuccess: invalidate,
-  });
-
-  const addComment = useMutation({
-    mutationFn: (body: string) => apiSend(`/api/tasks/${taskId}/comments`, "POST", { body }),
     onSuccess: invalidate,
   });
 
@@ -251,7 +254,7 @@ export function TaskModal({
                     <CommentComposer
                       user={currentUser}
                       mentions={mentions}
-                      onSubmit={(body) => addComment.mutate(body)}
+                      onSubmit={async (body, files) => { await postComment(taskId, body, files); invalidate(); }}
                     />
                   </section>
                 </div>
@@ -421,6 +424,16 @@ function activityText(
   const d = (a.data ?? {}) as Record<string, unknown>;
   const names = (ids: unknown) => (Array.isArray(ids) ? ids.map((id) => memberName(String(id))).join(", ") : "");
   switch (a.type) {
+    case "archived": return "archived this task";
+    case "unarchived": return "unarchived this task";
+    case "trashed": return "moved this task to Trash";
+    case "restored": return "restored this task from Trash";
+    case "bulk_updated": return "updated this task in bulk";
+    case "description_changed": return "updated the description";
+    case "comment_edited": return "edited a comment";
+    case "comment_deleted": return "deleted a comment";
+    case "comment_resolved": return "resolved a comment";
+    case "comment_reopened": return "reopened a comment";
     case "created":
       return d.fromTemplate ? `created this task from “${String(d.fromTemplate)}”` : "created this task";
     case "status_changed": {
@@ -557,7 +570,6 @@ function CommentItem({
   const [editing, setEditing] = useState(false);
   const [replying, setReplying] = useState(false);
   const [html, setHtml] = useState(comment.body);
-  const [replyHtml, setReplyHtml] = useState("");
   const isOwn = comment.user.id === currentUserId;
 
   const save = useMutation({
@@ -571,21 +583,13 @@ function CommentItem({
     mutationFn: () => apiSend(`/api/comments/${comment.id}`, "DELETE"),
     onSuccess: onChange,
   });
-  const reply = useMutation({
-    mutationFn: (body: string) => apiSend(`/api/tasks/${taskId}/comments`, "POST", { body, parentId: comment.id }),
-    onSuccess: () => {
-      setReplying(false);
-      setReplyHtml("");
-      onChange();
-    },
-  });
   const resolve = useMutation({
     mutationFn: (resolved: boolean) => apiSend(`/api/comments/${comment.id}`, "PATCH", { resolved }),
     onSuccess: onChange,
   });
 
   return (
-    <div className={`group flex gap-2.5 ${comment.resolved ? "opacity-60" : ""}`}>
+    <div id={`comment-${comment.id}`} className={`group flex scroll-m-4 gap-2.5 ${comment.resolved ? "opacity-60" : ""}`}>
       <Avatar user={comment.user} size="lg" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -641,6 +645,16 @@ function CommentItem({
         ) : (
           <>
             <RichText html={comment.body} className="mt-0.5" />
+            {comment.files.length > 0 && (
+              <ul className="my-2 space-y-1">
+                {comment.files.map((file) => (
+                  <li key={file.id} className="text-xs">
+                    <a href={`/api/comment-files/${file.id}`} download className="break-all text-cu-purple hover:underline">{file.name}</a>
+                    <span className="ml-2 text-cu-text-secondary">{Math.ceil(file.size / 1024)} KB</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="flex items-center gap-2">
               <CommentReactions
                 commentId={comment.id}
@@ -682,22 +696,13 @@ function CommentItem({
 
             {replying && taskId && (
               <div className="mt-2 border-l-2 border-cu-border pl-3">
-                <RichEditor content="" placeholder="Write a reply…" mentions={mentions} onChange={setReplyHtml} />
-                <div className="mt-1.5 flex gap-2">
-                  <button
-                    onClick={() => replyHtml && replyHtml !== "<p></p>" && reply.mutate(replyHtml)}
-                    disabled={reply.isPending}
-                    className="rounded bg-cu-purple px-2.5 py-1 text-[12px] font-medium text-white hover:bg-cu-purple-dark disabled:opacity-40"
-                  >
-                    Reply
-                  </button>
-                  <button
-                    onClick={() => setReplying(false)}
-                    className="rounded px-2.5 py-1 text-[12px] text-cu-text-secondary hover:bg-cu-hover"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <CommentComposer user={comment.user} mentions={mentions} reply
+                  onCancel={() => setReplying(false)}
+                  onSubmit={async (body, files) => {
+                    await postComment(taskId, body, files, comment.id);
+                    setReplying(false);
+                    onChange();
+                  }} />
               </div>
             )}
           </>
@@ -707,39 +712,85 @@ function CommentItem({
   );
 }
 
+async function postComment(taskId: string, body: string, files: File[], parentId?: string) {
+  const url = `/api/tasks/${taskId}/comments`;
+  if (!files.length) return apiSend(url, "POST", { body, parentId });
+  const form = new FormData();
+  form.set("body", body);
+  if (parentId) form.set("parentId", parentId);
+  for (const file of files) form.append("files", file);
+  const response = await fetch(url, { method: "POST", body: form });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(error?.error || "Could not post the comment");
+  }
+}
+
 function CommentComposer({
-  user,
-  mentions,
-  onSubmit,
+  user, mentions, onSubmit, reply = false, onCancel,
 }: {
   user: { name: string; color: string; avatarUrl: string | null };
   mentions: { id: string; label: string }[];
-  onSubmit: (body: string) => void;
+  onSubmit: (body: string, files: File[]) => Promise<void>;
+  reply?: boolean;
+  onCancel?: () => void;
 }) {
   const [html, setHtml] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [error, setError] = useState("");
   const [resetKey, setResetKey] = useState(0);
-  const empty = !html || html === "<p></p>";
-  function submit() {
-    if (empty) return;
-    onSubmit(html);
-    setHtml("");
-    setResetKey((k) => k + 1);
-  }
+  const send = useMutation({
+    mutationFn: () => onSubmit(html, files),
+    onSuccess: () => {
+      setHtml("");
+      setFiles([]);
+      setResetKey((value) => value + 1);
+    },
+    onError: (err) => setError(err.message),
+  });
+  const empty = (!html || html === "<p></p>") && !files.length;
   return (
     <div className="mt-4 flex gap-2.5">
-      <Avatar user={user} size="lg" />
-      <div className="flex-1">
-        <RichEditor key={resetKey} content="" placeholder="Write a comment…" mentions={mentions} onChange={setHtml} />
-        <div className="mt-1.5 flex justify-end">
-          <button
-            onClick={submit}
-            disabled={empty}
-            className="rounded bg-cu-purple px-3 py-1 text-[13px] font-medium text-white disabled:opacity-40 hover:bg-cu-purple-dark"
-          >
-            Comment
-          </button>
-        </div>
-      </div>
+      {!reply && <Avatar user={user} size="lg" />}
+      <form className="min-w-0 flex-1" onSubmit={(event) => {
+        event.preventDefault();
+        if (!empty && !send.isPending) { setError(""); send.mutate(); }
+      }}>
+        <fieldset disabled={send.isPending}>
+          <RichEditor key={resetKey} content="" placeholder={reply ? "Write a reply…" : "Write a comment…"}
+            mentions={mentions} onChange={setHtml} />
+          <label className="mt-2 block text-xs text-cu-text-secondary">
+            Attach files (up to 5, 10 MB total)
+            <input type="file" multiple aria-label={reply ? "Attach files to reply" : "Attach files to comment"} className="mt-1 block max-w-full"
+              onChange={(event) => {
+                const selected = [...files, ...Array.from(event.target.files ?? [])];
+                event.target.value = "";
+                if (selected.length > 5 || selected.some((file) => !file.size) || selected.reduce((n, file) => n + file.size, 0) > 10 * 1024 * 1024) {
+                  setError("Select up to five non-empty files, 10 MB total.");
+                  return;
+                }
+                setError("");
+                setFiles(selected);
+              }} />
+          </label>
+          {files.map((file, index) => (
+            <div key={index} className="mt-1 flex gap-2 text-xs">
+              <span className="break-all">{file.name}</span>
+              <button type="button" className="text-cu-purple hover:underline" onClick={() => {
+                setFiles((previous) => previous.filter((_, i) => i !== index));
+                setError("");
+              }}>Remove <span className="sr-only">{file.name}</span></button>
+            </div>
+          ))}
+          {error && <p role="alert" className="mt-2 text-xs text-cu-urgent">{error}</p>}
+          <div className="mt-2 flex justify-end gap-2">
+            {onCancel && <button type="button" onClick={onCancel} className="rounded px-3 py-1 text-xs hover:bg-cu-hover">Cancel</button>}
+            <button disabled={empty} className="rounded bg-cu-purple px-3 py-1 text-xs font-medium text-white disabled:opacity-40">
+              {reply ? "Reply" : "Comment"}
+            </button>
+          </div>
+        </fieldset>
+      </form>
     </div>
   );
 }

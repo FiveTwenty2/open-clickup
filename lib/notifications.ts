@@ -1,3 +1,4 @@
+import { publish } from "@/lib/events";
 import { prisma } from "@/lib/db";
 
 // re-exported for callers that import from this module
@@ -21,4 +22,5 @@ export async function createNotifications(opts: {
       body: opts.body,
     })),
   });
+  publish({ type: "notifications", userIds: recipients });
 }

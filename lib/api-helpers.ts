@@ -19,6 +19,10 @@ export async function readJson<T>(req: Request, schema: ZodType<T>): Promise<T> 
   } catch {
     throw new ApiError(400, "Invalid JSON body");
   }
+  return validateInput(raw, schema);
+}
+
+export function validateInput<T>(raw: unknown, schema: ZodType<T>): T {
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
     const msg = parsed.error.issues

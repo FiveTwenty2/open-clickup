@@ -118,16 +118,22 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
 
   // collect activity-log entries for changes worth an audit trail
   const activityLog: { type: string; data: Record<string, unknown> }[] = [];
+  if (patch.archived !== undefined && patch.archived !== existing.archived) {
+    activityLog.push({ type: patch.archived ? "archived" : "unarchived", data: {} });
+  }
+  if (patch.description !== undefined && patch.description !== existing.description) {
+    activityLog.push({ type: "description_changed", data: {} });
+  }
   if (patch.name !== undefined && patch.name !== existing.name) {
-    activityLog.push({ type: "renamed", data: { name: patch.name } });
+    activityLog.push({ type: "renamed", data: { from: existing.name, name: patch.name } });
   }
   if (patch.priority !== undefined && patch.priority !== existing.priority) {
-    activityLog.push({ type: "priority_changed", data: { priority: patch.priority } });
+    activityLog.push({ type: "priority_changed", data: { from: existing.priority, priority: patch.priority } });
   }
   if (patch.dueDate !== undefined) {
     const newDue = patch.dueDate ? new Date(patch.dueDate).toISOString() : null;
     const oldDue = existing.dueDate ? existing.dueDate.toISOString() : null;
-    if (newDue !== oldDue) activityLog.push({ type: "due_changed", data: { dueDate: newDue } });
+    if (newDue !== oldDue) activityLog.push({ type: "due_changed", data: { from: oldDue, dueDate: newDue } });
   }
 
   // status change → set completedAt + log
@@ -139,7 +145,7 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
     const completed = isCompletedStatus(newStatus.type);
     becameDone = completed && !isCompletedStatus(existing.status.type);
     data.completedAt = completed ? existing.completedAt ?? new Date() : null;
-    activityLog.push({ type: "status_changed", data: { fromId: existing.statusId, toId: patch.statusId } });
+    activityLog.push({ type: "status_changed", data: { fromId: existing.statusId, toId: patch.statusId, from: existing.status.name, to: newStatus.name } });
   }
 
   // assignees full-set replacement
@@ -182,17 +188,15 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
     };
   }
 
-  const task = await prisma.task.update({
-    where: { id: taskId },
-    data,
-    include: taskInclude,
-  });
-
-  if (activityLog.length) {
-    await prisma.activity.createMany({
-      data: activityLog.map((a) => ({ taskId, userId: actorId, type: a.type, data: a.data as Prisma.InputJsonValue })),
+  const task = await prisma.$transaction(async (tx) => {
+    const updated = await tx.task.update({ where: { id: taskId, deletedAt: null }, data, include: taskInclude });
+    if (activityLog.length) await tx.activity.createMany({
+      data: activityLog.map((entry) => ({
+        taskId, userId: actorId, type: entry.type, data: entry.data as Prisma.InputJsonValue,
+      })),
     });
-  }
+    return updated;
+  });
 
   // completing a recurring task spawns the next occurrence
   if (becameDone && existing.recurrence) {

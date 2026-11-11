@@ -3,64 +3,69 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
 import { requireTaskInWorkspace } from "@/lib/integration-access";
-import { userSelect } from "@/lib/queries";
-import { readJson, route } from "@/lib/api-helpers";
-import { extractMentionIds, createNotifications } from "@/lib/notifications";
+import { userSelect, commentFileSelect } from "@/lib/queries";
+import { ApiError, readJson, route, validateInput } from "@/lib/api-helpers";
+import { extractMentionIds } from "@/lib/mentions";
 import { publish } from "@/lib/events";
 
 type Ctx = { params: Promise<{ taskId: string }> };
-const schema = z.object({
-  body: z.string().trim().min(1, "Comment cannot be empty"),
-  parentId: z.string().nullish(),
-});
+const schema = z.object({ body: z.string().trim().max(50000), parentId: z.string().nullish() });
+const maxBytes = 10 * 1024 * 1024;
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { body, parentId } = await readJson(req, schema);
   const { user, workspaceId } = await requireRole("MEMBER");
-  await requireTaskInWorkspace(taskId, workspaceId);
-  const comment = await prisma.comment.create({
-    data: { taskId, userId: user.id, body, parentId: parentId ?? null },
-    include: { user: { select: userSelect }, reactions: true },
-  });
+  const task = await requireTaskInWorkspace(taskId, workspaceId);
+  const form = req.headers.get("content-type")?.startsWith("multipart/form-data")
+    ? await req.formData().catch(() => { throw new ApiError(400, "Invalid attachment upload"); })
+    : null;
+  const { body, parentId } = form
+    ? validateInput({ body: form.get("body") ?? "", parentId: form.get("parentId") }, schema)
+    : await readJson(req, schema);
+  const uploads = form?.getAll("files") ?? [];
+  if (uploads.length > 5 || uploads.some((file) => !(file instanceof File) || file.size === 0 || !file.name)) {
+    throw new ApiError(400, "Select up to five non-empty files");
+  }
+  const files = uploads as File[];
+  if (files.reduce((total, file) => total + file.size, 0) > maxBytes) throw new ApiError(413, "Files exceed 10 MB combined");
+  if ((!body || body === "<p></p>") && !files.length) throw new ApiError(400, "Write a comment or attach a file");
+  const attachments = await Promise.all(files.map(async (file) => ({
+    name: file.name.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 255) || "Attachment",
+    size: file.size, contents: new Uint8Array(await file.arrayBuffer()),
+  })));
 
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    select: {
-      listId: true,
-      assignees: { select: { userId: true } },
-      watchers: { select: { userId: true } },
-    },
-  });
-  if (task) publish({ type: "list", listId: task.listId });
-  await prisma.activity.create({
-    data: { taskId, userId: user.id, type: "commented", data: {} },
-  });
-
-  const mentioned = extractMentionIds(body);
-  if (mentioned.length) {
-    await createNotifications({
-      recipientIds: mentioned,
-      actorId: user.id,
-      taskId,
-      type: "mention",
-      body: "mentioned you in a comment",
+  const { comment, recipients } = await prisma.$transaction(async (tx) => {
+    const parent = parentId ? await tx.comment.findFirst({
+      where: { id: parentId, taskId, parentId: null }, select: { userId: true },
+    }) : null;
+    if (parentId && !parent) throw new ApiError(404, "Comment thread not found");
+    const created = await tx.comment.create({
+      data: { taskId, userId: user.id, body, parentId, files: { create: attachments } },
+      include: { user: { select: userSelect }, reactions: true, files: { select: commentFileSelect } },
     });
-  }
-
-  // notify watchers + assignees (minus the commenter and anyone already @-mentioned)
-  if (task) {
-    const followers = [...task.assignees, ...task.watchers].map((f) => f.userId);
-    const recipients = [...new Set(followers)].filter((id) => !mentioned.includes(id));
-    if (recipients.length) {
-      await createNotifications({
-        recipientIds: recipients,
-        actorId: user.id,
-        taskId,
-        type: "comment",
-        body: "commented on a task you follow",
-      });
-    }
-  }
+    await tx.activity.create({ data: {
+      taskId, userId: user.id, type: "commented",
+      data: { commentId: created.id, files: attachments.map((file) => file.name) },
+    } });
+    const followers = await tx.task.findUniqueOrThrow({
+      where: { id: taskId },
+      select: { assignees: { select: { userId: true } }, watchers: { select: { userId: true } } },
+    });
+    const mentioned = new Set(extractMentionIds(body));
+    const ids = [...mentioned, ...followers.assignees.map((row) => row.userId), ...followers.watchers.map((row) => row.userId)];
+    if (parent) ids.push(parent.userId);
+    const members = await tx.workspaceMember.findMany({
+      where: { workspaceId, userId: { in: ids, not: user.id } }, select: { userId: true },
+    });
+    const notifications = members.map(({ userId }) => {
+      const type = mentioned.has(userId) ? "mention" : userId === parent?.userId ? "reply" : "comment";
+      const text = { mention: "mentioned you in a comment", reply: "replied to your comment", comment: "commented on a task you follow" };
+      return { userId, actorId: user.id, taskId, commentId: parentId ?? created.id, type, body: text[type] };
+    });
+    if (notifications.length) await tx.notification.createMany({ data: notifications });
+    return { comment: created, recipients: members.map((member) => member.userId) };
+  });
+  publish({ type: "list", listId: task.listId });
+  if (recipients.length) publish({ type: "notifications", userIds: recipients });
   return NextResponse.json(comment, { status: 201 });
 });

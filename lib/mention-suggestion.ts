@@ -18,6 +18,7 @@ export function createMentionSuggestion(
       let selected = 0;
       let command: ((item: MentionItem) => void) | null = null;
       let rect: DOMRect | null = null;
+      let dialog: HTMLElement | null = null;
 
       function paint() {
         if (!popup) return;
@@ -34,8 +35,9 @@ export function createMentionSuggestion(
           popup!.appendChild(b);
         });
         if (rect) {
-          popup.style.left = `${rect.left}px`;
-          popup.style.top = `${rect.bottom + 6}px`;
+          const bounds = dialog?.getBoundingClientRect();
+          popup.style.left = `${rect.left - (bounds?.left ?? 0)}px`;
+          popup.style.top = `${rect.bottom - (bounds?.top ?? 0) + 6}px`;
         }
         popup.style.display = items.length ? "block" : "none";
       }
@@ -48,7 +50,9 @@ export function createMentionSuggestion(
           rect = props.clientRect?.() ?? null;
           popup = document.createElement("div");
           popup.className = "cu-mention-popup";
-          document.body.appendChild(popup);
+          dialog = props.editor.view.dom.closest<HTMLElement>('[role="dialog"]');
+          if (dialog) popup.style.position = "absolute";
+          (dialog ?? document.body).appendChild(popup);
           paint();
         },
         onUpdate: (props) => {

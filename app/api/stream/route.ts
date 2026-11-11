@@ -23,7 +23,13 @@ export async function GET() {
         }
       };
       send(": connected\n\n");
-      unsubscribe = subscribe((event) => send(`data: ${JSON.stringify(event)}\n\n`));
+      unsubscribe = subscribe((event) => {
+        if ("userIds" in event) {
+          if (event.userIds.includes(user.id)) send(`data: ${JSON.stringify({ type: event.type })}\n\n`);
+          return;
+        }
+        send(`data: ${JSON.stringify(event)}\n\n`);
+      });
       heartbeat = setInterval(() => send(": hb\n\n"), 25000);
     },
     cancel() {

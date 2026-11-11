@@ -9,12 +9,12 @@ export const GET = route(async (req) => {
   const params = new URL(req.url).searchParams;
   const mode = params.get("mode") === "trash" ? "trash" : "archive";
   const page = Math.min(10_000, Math.max(0, Number.parseInt(params.get("page") ?? "0", 10) || 0));
-  return NextResponse.json(await getRecoveryTasks(workspaceId, mode, page));
+  return NextResponse.json(await getRecoveryTasks(workspaceId, mode, page, params.get("q")?.trim().slice(0, 150)));
 });
 
 export const POST = route(async (req) => {
-  const { workspaceId } = await requireIntegrationAccess(req, true);
+  const { workspaceId, user } = await requireIntegrationAccess(req, true);
   const { id } = await readJson(req, z.object({ id: z.string().min(1) }));
-  await restoreTask(workspaceId, id);
+  await restoreTask(workspaceId, id, user.id);
   return NextResponse.json({ ok: true });
 });

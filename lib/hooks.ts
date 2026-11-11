@@ -58,6 +58,9 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["dashboard"] });
           qc.invalidateQueries({ queryKey: ["workspace-tasks"] });
           qc.invalidateQueries({ queryKey: ["goals"] });
+          qc.invalidateQueries({ queryKey: ["audit"] });
+        } else if (event.type === "messages") {
+          qc.invalidateQueries({ queryKey: ["messages"] });
         } else if (event.type === "bootstrap") {
           qc.invalidateQueries({ queryKey: ["bootstrap"] });
         } else if (event.type === "docs") {
@@ -84,15 +87,17 @@ export type NotificationItem = {
   type: string;
   body: string;
   read: boolean;
+  archivedAt: string | null;
+  commentId: string | null;
   createdAt: string;
   actor: UserLite | null;
-  task: { id: string; name: string; listId: string } | null;
+  task: { id: string; name: string; listId: string; deletedAt: string | null } | null;
 };
 
-export function useNotifications() {
+export function useNotifications(filter = "all", page = 0) {
   return useQuery({
-    queryKey: ["notifications"],
-    queryFn: () => apiGet<{ notifications: NotificationItem[]; unread: number }>("/api/notifications"),
+    queryKey: ["notifications", filter, page],
+    queryFn: () => apiGet<{ notifications: NotificationItem[]; unread: number; hasNext: boolean }>(`/api/notifications?filter=${filter}&page=${page}`),
     refetchInterval: 30_000,
   });
 }

@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 // Reusable include shapes (single source of truth for API <-> client types)
 // ----------------------------------------------------------------------------
 
+export const commentFileSelect = { id: true, name: true, size: true } as const;
+
 export const userSelect = {
   id: true,
   name: true,
@@ -153,6 +155,7 @@ export async function getTaskDetail(taskId: string) {
         include: {
           user: { select: userSelect },
           reactions: true,
+          files: { select: commentFileSelect },
         },
       },
       activities: {

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiSend } from "@/lib/api";
 import { Inbox } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -11,7 +13,14 @@ import { Avatar } from "@/components/ui/avatar";
 
 export function InboxButton() {
   const router = useRouter();
-  const { data } = useNotifications();
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const { data, isError, isPending } = useNotifications(filter, page);
+  const client = useQueryClient();
+  const update = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: string }) => apiSend("/api/notifications", "PATCH", { ids: [id], action }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["notifications"] }),
+  });
   const markRead = useMarkNotificationsRead();
   const [open, setOpen] = useState(false);
 
@@ -19,8 +28,10 @@ export function InboxButton() {
   const items = data?.notifications ?? [];
 
   function openNotif(n: NotificationItem) {
-    if (n.task) router.push(`/l/${n.task.listId}?task=${n.task.id}`);
-    markRead.mutate([n.id]);
+    if (n.type === "message" && n.actor) router.push(`/messages?peer=${n.actor.id}`);
+    if (n.task) router.push(n.task.deletedAt ? "/recovery?mode=trash" :
+      `/l/${n.task.listId}?task=${n.task.id}${n.commentId ? "&comment=" + n.commentId : ""}`);
+    if (!n.read) update.mutate({ id: n.id, action: "read" });
     setOpen(false);
   }
 
@@ -52,13 +63,21 @@ export function InboxButton() {
               </button>
             )}
           </div>
+          <div className="flex gap-3 border-b border-cu-border px-3 py-2 text-xs">
+            {Object.entries({ all: "All", unread: "Unread", archive: "Archive" }).map(([item, label]) => (
+              <button key={item} aria-pressed={filter === item} className="capitalize aria-pressed:font-bold aria-pressed:text-cu-purple"
+                onClick={() => { setFilter(item); setPage(0); }}>{label}</button>
+            ))}
+          </div>
           <div className="max-h-[400px] overflow-y-auto">
-            {items.length === 0 && (
+            {isPending && <p className="p-3 text-sm">Loading notifications…</p>}
+            {(isError || update.isError || markRead.isError) && <p role="alert" className="p-3 text-sm">Could not update the inbox.</p>}
+            {data && items.length === 0 && (
               <div className="px-3 py-10 text-center text-[13px] text-cu-text-tertiary">You&apos;re all caught up 🎉</div>
             )}
             {items.map((n) => (
+              <div key={n.id} data-notification-id={n.id} className="border-b border-cu-border/60">
               <button
-                key={n.id}
                 onClick={() => openNotif(n)}
                 className={cn(
                   "flex w-full items-start gap-2.5 border-b border-cu-border/60 px-3 py-2.5 text-left last:border-0 hover:bg-cu-hover",
@@ -81,8 +100,21 @@ export function InboxButton() {
                 </div>
                 {!n.read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-cu-purple" />}
               </button>
+              <div className="flex justify-end gap-3 px-3 pb-2 text-xs text-cu-text-secondary">
+                <button className="hover:underline" onClick={() => update.mutate({ id: n.id, action: n.read ? "unread" : "read" })}>
+                  {n.read ? "Mark unread" : "Mark read"}
+                </button>
+                <button className="hover:underline" onClick={() => update.mutate({ id: n.id, action: n.archivedAt ? "restore" : "archive" })}>
+                  {n.archivedAt ? "Restore notification" : "Archive notification"}
+                </button>
+              </div>
+              </div>
             ))}
           </div>
+          {(page > 0 || data?.hasNext) && <div className="flex justify-between px-3 py-2 text-xs">
+            <button disabled={!page} onClick={() => setPage(page - 1)}>Previous</button>
+            <button disabled={!data?.hasNext} onClick={() => setPage(page + 1)}>Next</button>
+          </div>}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

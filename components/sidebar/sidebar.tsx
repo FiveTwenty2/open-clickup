@@ -25,6 +25,8 @@ import {
   Star,
   FileText,
   Target,
+  ClipboardList,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiSend } from "@/lib/api";
@@ -38,7 +40,7 @@ import type { SpaceNode, FolderNode, ListNode } from "@/lib/queries";
 import { Avatar } from "@/components/ui/avatar";
 
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
-  const { workspace, favorites } = useWorkspace();
+  const { workspace, favorites, currentUser } = useWorkspace();
   const { createSpace } = useHierarchy();
   const [creatingSpace, setCreatingSpace] = useState(false);
   const router = useRouter();
@@ -92,6 +94,12 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           onClick={() => router.push("/home")}
         />
         <InboxButton />
+        {workspace.members.find((member) => member.userId === currentUser.id)?.role !== "GUEST" && (
+          <NavItem icon={<MessageSquare className="h-4 w-4" />} label="Messages" active={pathname === "/messages"} onClick={() => router.push("/messages")} />
+        )}
+        {workspace.members.some((member) => member.userId === currentUser.id && (member.role === "OWNER" || member.role === "ADMIN")) && (
+          <NavItem icon={<ClipboardList className="h-4 w-4" />} label="Audit log" active={pathname === "/audit"} onClick={() => router.push("/audit")} />
+        )}
         <NavItem icon={<ListIcon className="h-4 w-4" />} label="All tasks" active={pathname === "/tasks"} onClick={() => router.push("/tasks")} />
         <NavItem icon={<LayoutGrid className="h-4 w-4" />} label="Dashboards" active={pathname === "/dashboards"} onClick={() => router.push("/dashboards")} />
         <NavItem icon={<FileText className="h-4 w-4" />} label="Docs" active={pathname === "/docs"} onClick={() => router.push("/docs")} />

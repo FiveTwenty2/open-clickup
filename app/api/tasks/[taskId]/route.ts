@@ -52,7 +52,7 @@ export const PATCH = route(async (req, { params }: Ctx) => {
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { workspaceId } = await requireRole("MEMBER");
-  await trashTasks(workspaceId, [taskId]);
+  const { workspaceId, user } = await requireRole("MEMBER");
+  await trashTasks(workspaceId, [taskId], user.id);
   return NextResponse.json({ ok: true });
 });

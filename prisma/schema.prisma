@@ -37,6 +37,8 @@ model User {
   actedNotifs   Notification[]    @relation("NotifActor")
   timeEntries   TimeEntry[]
   favorites     Favorite[]
+  sentMessages DirectMessage[] @relation("MessageSender")
+  receivedMessages DirectMessage[] @relation("MessageRecipient")
 }
 
 model Favorite {
@@ -59,6 +61,8 @@ model Notification {
   type      String // "mention" | "assigned" | "comment"
   body      String
   read      Boolean  @default(false)
+  archivedAt DateTime?
+  commentId String?
   createdAt DateTime @default(now())
 
   user  User  @relation("NotifRecipient", fields: [userId], references: [id], onDelete: Cascade)
@@ -96,6 +100,7 @@ model ApiToken {
 }
 
 model Workspace {
+  messages DirectMessage[]
   id        String   @id @default(cuid())
   name      String
   color     String   @default("#7b68ee")
@@ -516,8 +521,34 @@ model Comment {
   parent    Comment?          @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[]         @relation("CommentReplies")
   reactions CommentReaction[]
+  files CommentFile[]
 
   @@index([taskId])
+}
+
+model CommentFile {
+  id        String @id @default(cuid())
+  commentId String
+  name      String
+  size      Int
+  contents  Bytes
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@index([commentId])
+}
+
+model DirectMessage {
+  id          String @id @default(cuid())
+  workspaceId String
+  senderId    String
+  recipientId String
+  body        String
+  createdAt   DateTime @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sender      User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipient   User @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, senderId, recipientId, createdAt])
 }
 
 model CommentReaction {

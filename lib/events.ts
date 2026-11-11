@@ -5,7 +5,8 @@ export type RealtimeEvent =
   | { type: "list"; listId: string }
   | { type: "bootstrap" }
   | { type: "docs" }
-  | { type: "goals" };
+  | { type: "goals" }
+  | { type: "messages" | "notifications"; userIds: string[] };
 
 type Listener = (event: RealtimeEvent) => void;
 

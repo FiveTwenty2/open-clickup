@@ -41,3 +41,13 @@ Invoke-RestMethod "$base/api/tasks/$($task.id)" -Method Patch -Headers $headers 
 Get `$listId` from the workspace response and `$closedStatusId` from that list's statuses. Add `parentId` to the create request to create a subtask. A token has the permissions of its owner within its workspace. A read-only token cannot write, and tokens cannot delete tasks or manage other tokens. Error responses use JSON with an `error` field. Expect 401 for an invalid, expired or revoked token, 403 for insufficient permissions, and 404 for an unavailable resource.
 
 CSV import accepts `{ "csv": "...", "preview": true }`. Use `preview: false` to write once the returned `errors` array is empty. A file must contain `Task Name` (or `Name`). Optional fields are `Task ID`, `Parent Task ID`, `Status`, `Priority`, `Assignees`, `Start Date`, `Due Date` and `Description`. Parent IDs must refer to rows in the same file. Use ISO dates and assignee emails. A failed validation writes no tasks.
+
+
+## Communication and audit
+
+These endpoints use the signed-in browser session.
+
+- `GET /api/messages?peer=<userId>` reads a direct conversation. Use `before=<messageId>` to fetch older messages. `POST /api/messages` takes `{ "peerId": "...", "body": "..." }`.
+- `POST /api/tasks/:id/comments` accepts JSON with `body` and optional `parentId`. For files, use multipart form data with the same fields and repeat the `files` field for each attachment. Up to five files and 10 MB total are allowed. Attachment metadata includes an ID for `GET /api/comment-files/:id`.
+- `GET /api/notifications` accepts `filter=all|unread|archive` and zero-based `page`. `PATCH /api/notifications` takes `ids` and `action=read|unread|archive|restore`.
+- `GET /api/audit` is available to workspace owners and admins. Filter by `actor` (user ID), `action=recovery|discussion`, and `q` (task name). Use zero-based `page` for older entries.

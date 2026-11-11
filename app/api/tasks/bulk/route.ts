@@ -24,12 +24,12 @@ const schema = z.object({
 });
 
 export const POST = route(async (req) => {
-  const { workspaceId } = await requireRole("MEMBER");
+  const { workspaceId, user } = await requireRole("MEMBER");
   const { ids: requested, patch, delete: del } = await readJson(req, schema);
   const ids = [...new Set(requested)];
 
   if (del) {
-    const deleted = await trashTasks(workspaceId, ids);
+    const deleted = await trashTasks(workspaceId, ids, user.id);
     return NextResponse.json({ ok: true, deleted });
   }
 
@@ -54,7 +54,23 @@ export const POST = route(async (req) => {
     }
     if (patch?.priority !== undefined) data.priority = patch.priority as Priority | null;
     if (patch?.dueDate !== undefined) data.dueDate = patch.dueDate ? new Date(patch.dueDate) : null;
-    if (patch?.archived !== undefined) data.archived = patch.archived;
+    if (patch?.archived !== undefined) {
+      const changed = await tx.task.updateManyAndReturn({
+        where: { id: { in: ids }, deletedAt: null, archived: !patch.archived },
+        data: { archived: patch.archived }, select: { id: true },
+      });
+      if (changed.length) await tx.activity.createMany({
+        data: changed.map(({ id }) => ({ taskId: id, userId: user.id, type: patch.archived ? "archived" : "unarchived" })),
+      });
+    }
+    if (Object.keys(data).length || patch?.assigneeIds) await tx.activity.createMany({
+      data: ids.map((taskId) => ({ taskId, userId: user.id, type: "bulk_updated", data: {
+        ...(patch?.statusId && { statusId: patch.statusId }),
+        ...(patch?.priority !== undefined && { priority: patch.priority }),
+        ...(patch?.dueDate !== undefined && { dueDate: patch.dueDate }),
+        ...(patch?.assigneeIds && { assigneeIds: patch.assigneeIds }),
+      } })),
+    });
     if (Object.keys(data).length) await tx.task.updateMany({ where: { id: { in: ids }, deletedAt: null }, data });
     if (completed) await tx.task.updateMany({
       where: { id: { in: ids }, deletedAt: null, completedAt: null },

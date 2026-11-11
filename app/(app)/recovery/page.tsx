@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiSend } from "@/lib/api";
 import type { getRecoveryTasks } from "@/lib/task-recovery";
@@ -10,14 +11,24 @@ import { useWorkspace } from "@/components/workspace-context";
 const button = "rounded border border-cu-border px-3 py-1.5 text-sm hover:bg-cu-hover disabled:opacity-50";
 
 export default function RecoveryPage() {
-  const [mode, setMode] = useState<"archive" | "trash">("archive");
+  return <Suspense fallback={<p className="p-5">Loading recovery…</p>}><RecoveryFromUrl /></Suspense>;
+}
+
+function RecoveryFromUrl() {
+  const mode = useSearchParams().get("mode") === "trash" ? "trash" : "archive";
+  return <Recovery key={mode} initialMode={mode} />;
+}
+
+function Recovery({ initialMode }: { initialMode: "archive" | "trash" }) {
+  const [mode, setMode] = useState(initialMode);
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const { workspace, currentUser } = useWorkspace();
   const canRestore = workspace.members.find((member) => member.userId === currentUser.id)?.role !== "GUEST";
   const client = useQueryClient();
   const query = useQuery({
-    queryKey: ["recovery", mode, page],
-    queryFn: () => apiGet<Awaited<ReturnType<typeof getRecoveryTasks>>>(`/api/tasks/recovery?mode=${mode}&page=${page}`),
+    queryKey: ["recovery", mode, page, search],
+    queryFn: () => apiGet<Awaited<ReturnType<typeof getRecoveryTasks>>>(`/api/tasks/recovery?mode=${mode}&page=${page}&q=${encodeURIComponent(search)}`),
   });
   const restore = useMutation({
     mutationFn: (id: string) => apiSend("/api/tasks/recovery", "POST", { id }),
@@ -34,6 +45,8 @@ export default function RecoveryPage() {
           </button>
         ))}
       </div>
+      <input aria-label="Search archived or trashed tasks" placeholder="Search by task name" className={button + " mb-4 bg-cu-panel"}
+        value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} />
       {query.isPending && <p>Loading tasks…</p>}
       {query.isError && <p role="alert">Could not load tasks.</p>}
       {restore.isError && <p role="alert">Could not restore this task. Restore its parent first if needed.</p>}
@@ -44,6 +57,13 @@ export default function RecoveryPage() {
             <div className="min-w-0">
               {mode === "archive" ? <Link href={`/l/${task.listId}?task=${task.id}`} className="font-medium hover:underline">{task.name}</Link> : <span className="font-medium">{task.name}</span>}
               <p className="text-sm text-cu-text-secondary">{task.list.space.name} / {task.list.name} · {task.status.name}</p>
+              {task.activities[0] && (
+                <p className="text-xs text-cu-text-secondary">
+                  {mode === "archive" ? "Archived" : "Moved to Trash"}
+                  {task.activities[0].user && ` by ${task.activities[0].user.name}`}
+                  {" · "}{new Date(task.activities[0].createdAt).toLocaleString()}
+                </p>
+              )}
             </div>
             {canRestore && <button className={button} disabled={restore.isPending} onClick={() => restore.mutate(task.id)} aria-label={`Restore ${task.name}`}>{mode === "archive" ? "Unarchive" : "Restore"}</button>}
           </li>
