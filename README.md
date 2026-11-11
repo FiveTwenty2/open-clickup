@@ -43,6 +43,10 @@ Hierarchy, five views, custom fields, real-time collaboration and dark mode — 
 
 **Closed subtasks** — open a task to see its closed count and use **Show closed subtasks** to include or hide subtasks in Done or Closed statuses. List rows can also be expanded to see their subtasks.
 
+**Task shortcuts** — right-click a task in List, Board or Table for status, priority, duplicate and link actions. Click a status circle to choose a status or quickly close or reopen a task. Use list search, completion and assignee filters to narrow any view.
+
+**API access** — create and revoke personal tokens from the profile menu. See [the API guide](docs/api.md) for supported requests and examples.
+
 **Productivity** — filter / sort / **group-by** (status · assignee · priority) on every view, a **⌘K command palette**, keyboard shortcuts, **multi-select + bulk actions**, **task templates**, **favorites**, a "My Work" home, a status-workflow editor, **dark mode**, and a mobile-responsive layout.
 
 **Built to run in production** — email/password **auth with server-side sessions** (scrypt-hashed), **role-based permissions**, a fully **Zod-validated** API, security headers + auth rate limiting, a `/api/health` probe, a one-command **Docker** self-host, and unit + e2e tests in CI.

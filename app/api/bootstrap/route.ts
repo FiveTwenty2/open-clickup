@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getWorkspaceTree } from "@/lib/queries";
-import { getCurrentUser } from "@/lib/auth";
+import { requireIntegrationAccess } from "@/lib/integration-access";
 import { route, ApiError } from "@/lib/api-helpers";
 
-export const GET = route(async () => {
-  const user = await getCurrentUser();
-  if (!user) throw new ApiError(401, "Not authenticated");
+export const GET = route(async (req) => {
+  const { user, workspaceId } = await requireIntegrationAccess(req);
 
-  const workspace = await getWorkspaceTree();
+  const workspace = await getWorkspaceTree(workspaceId);
   if (!workspace) throw new ApiError(404, "No workspace found");
 
   const favorites = await prisma.favorite.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, list: { space: { workspaceId } } },
     select: { listId: true },
   });
 

@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { StatusModel } from "@/lib/queries";
+import { isCompletedStatus, quickStatus } from "@/lib/task-status";
 
 /** ClickUp-style status circle: outline (todo), filled ring (active), check (done). */
 export function StatusCircle({
@@ -15,7 +16,7 @@ export function StatusCircle({
   size?: number;
   className?: string;
 }) {
-  const done = status.type === "DONE" || status.type === "CLOSED";
+  const done = isCompletedStatus(status.type);
   if (done) {
     return (
       <span
@@ -47,25 +48,31 @@ export function StatusControl({
   statuses,
   onChange,
   variant = "circle",
+  taskName,
 }: {
   current: StatusModel;
   statuses: StatusModel[];
   onChange: (statusId: string) => void;
   variant?: "circle" | "badge";
+  taskName?: string;
 }) {
+  const target = quickStatus(current, statuses);
+  const label = taskName ? `Change status for ${taskName}` : "Change status";
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         {variant === "circle" ? (
           <button
-            className="flex items-center justify-center rounded-full outline-none hover:scale-110 transition-transform"
+            className="flex items-center justify-center rounded-full hover:scale-110 transition-transform"
             onClick={(e) => e.stopPropagation()}
-            title={current.name}
+            aria-label={label}
+            title={`Change status: ${current.name}`}
           >
             <StatusCircle status={current} />
           </button>
         ) : (
           <button
+            aria-label={label}
             onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px] font-semibold uppercase tracking-wide outline-none hover:opacity-90"
             style={{ color: current.color, backgroundColor: `${current.color}1f` }}
@@ -85,6 +92,14 @@ export function StatusControl({
           <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-cu-text-tertiary">
             Status
           </div>
+          {target && (
+            <DropdownMenu.Item
+              onSelect={() => onChange(target.id)}
+              className="cursor-pointer rounded px-2 py-1.5 text-[13px] font-medium text-cu-purple outline-none focus:bg-cu-hover"
+            >
+              {isCompletedStatus(current.type) ? "Reopen task" : "Close task"}
+            </DropdownMenu.Item>
+          )}
           {statuses.map((s) => (
             <DropdownMenu.Item
               key={s.id}

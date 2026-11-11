@@ -22,8 +22,10 @@ import {
 import { apiGet, apiSend } from "@/lib/api";
 import type { TaskDetail } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
-import { Priority, StatusType } from "@/lib/enums";
-import { StatusControl, StatusCircle } from "@/components/menus/status-control";
+import { Priority } from "@/lib/enums";
+import { StatusControl } from "@/components/menus/status-control";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
+import { isCompletedStatus } from "@/lib/task-status";
 import { PriorityControl } from "@/components/menus/priority-control";
 import { AssigneeControl } from "@/components/menus/assignee-control";
 import { DateControl } from "@/components/menus/date-control";
@@ -55,14 +57,15 @@ export function TaskModal({
   const qc = useQueryClient();
   const { currentUser, workspace } = useWorkspace();
   const mentions = workspace.members.map((m) => ({ id: m.user.id, label: m.user.name }));
-  const { data: task, isLoading } = useQuery({
+  const { data: task, isLoading, isError, refetch } = useQuery({
     queryKey: ["task", taskId],
     queryFn: () => apiGet<TaskDetail>(`/api/tasks/${taskId}`),
   });
   const [showClosedSubtasks, setShowClosedSubtasks] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const subtasks = task?.subtasks ?? [];
   const isClosed = (subtask: (typeof subtasks)[number]) =>
-    subtask.status.type === StatusType.DONE || subtask.status.type === StatusType.CLOSED;
+    isCompletedStatus(subtask.status.type);
   const closedCount = subtasks.filter(isClosed).length;
   const visibleSubtasks = showClosedSubtasks ? subtasks : subtasks.filter((subtask) => !isClosed(subtask));
 
@@ -92,18 +95,29 @@ export function TaskModal({
       apiSend(`/api/tasks/${taskId}/fields/${v.fieldId}`, "PUT", { value: v.value }),
     onSuccess: invalidate,
   });
+  const updateSubtask = useMutation({
+    mutationFn: ({ id, statusId }: { id: string; statusId: string }) =>
+      apiSend(`/api/tasks/${id}`, "PATCH", { statusId }),
+    onSuccess: invalidate,
+  });
 
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]" />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 flex h-[88vh] w-[min(1080px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-cu-panel shadow-2xl outline-none"
+          className={`fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl bg-cu-panel shadow-2xl outline-none ${expanded ? "h-[96vh] w-[98vw]" : "h-[88vh] w-[min(1080px,94vw)]"}`}
           aria-describedby={undefined}
         >
           <Dialog.Title className="sr-only">Task details</Dialog.Title>
 
-          {isLoading || !task ? (
+          {isError && !task ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-sm">
+              <p role="alert">Could not load this task. It may have been deleted or moved.</p>
+              <button className="text-cu-purple" onClick={() => void refetch()}>Try again</button>
+              <Dialog.Close>Close</Dialog.Close>
+            </div>
+          ) : isLoading || !task ? (
             <TaskModalSkeleton />
           ) : (
             <>
@@ -113,12 +127,18 @@ export function TaskModal({
                   current={task.status}
                   statuses={task.list.statuses}
                   variant="badge"
+                  taskName={task.name}
                   onChange={(statusId) => update.mutate({ statusId })}
                 />
                 <span className="text-[13px] text-cu-text-tertiary">in {task.list.name}</span>
+                {task.parentId && onOpenTask && (
+                  <button className="rounded px-2 py-1 text-[13px] text-cu-purple hover:bg-cu-hover" onClick={() => onOpenTask(task.parentId!)}>
+                    Open parent task
+                  </button>
+                )}
                 <div className="ml-auto flex items-center gap-1">
                   <TaskMenu taskId={taskId} defaultName={task.name} listId={listId} onOpenTask={onOpenTask} />
-                  <button aria-label="Expand" className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
+                  <button aria-label={expanded ? "Restore task window" : "Expand task window"} aria-pressed={expanded} onClick={() => setExpanded(!expanded)} className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
                     <Expand className="h-4 w-4" />
                   </button>
                   <Dialog.Close aria-label="Close" className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
@@ -173,21 +193,18 @@ export function TaskModal({
                         </p>
                       )}
                       {visibleSubtasks.map((sub) => (
-                        <button
-                          key={sub.id}
-                          onClick={() => onOpenTask?.(sub.id)}
-                          className="flex w-full items-center gap-2 border-b border-cu-border px-3 py-2 text-left last:border-0 hover:bg-cu-hover disabled:cursor-default"
-                          disabled={!onOpenTask}
-                        >
-                          <StatusCircle status={sub.status} size={14} />
-                          <span className="text-[13px]">{sub.name}</span>
+                        <TaskContextMenu key={sub.id} task={sub} statuses={task.list.statuses} onOpen={() => onOpenTask?.(sub.id)}>
+                        <div className="flex w-full items-center gap-2 border-b border-cu-border px-3 py-2 last:border-0 hover:bg-cu-hover">
+                          <StatusControl current={sub.status} statuses={task.list.statuses} taskName={sub.name} onChange={(statusId) => updateSubtask.mutate({ id: sub.id, statusId })} />
+                          <button onClick={() => onOpenTask?.(sub.id)} disabled={!onOpenTask} className="text-left text-[13px] hover:underline">{sub.name}</button>
                           {isClosed(sub) && <span className="text-xs text-cu-text-secondary">{sub.status.name}</span>}
                           <div className="ml-auto flex -space-x-1.5">
                             {sub.assignees.map((a) => (
                               <Avatar key={a.userId} user={a.user} size="sm" ring />
                             ))}
                           </div>
-                        </button>
+                        </div>
+                        </TaskContextMenu>
                       ))}
                       <SubtaskComposer onSubmit={(name) => addSubtask.mutate(name)} />
                     </div>
@@ -247,7 +264,7 @@ export function TaskModal({
                   <DetailRow icon={<CalendarIcon className="h-4 w-4" />} label="Due date">
                     <DateControl
                       value={task.dueDate}
-                      done={task.status.type === "DONE"}
+                      done={isCompletedStatus(task.status.type)}
                       onChange={(d) => update.mutate({ dueDate: d ? d.toISOString() : null })}
                     />
                   </DetailRow>

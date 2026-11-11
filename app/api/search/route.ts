@@ -1,13 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { route } from "@/lib/api-helpers";
+import { requireIntegrationAccess } from "@/lib/integration-access";
 
-export async function GET(req: NextRequest) {
-  const q = req.nextUrl.searchParams.get("q")?.trim() ?? "";
+export const GET = route(async (req) => {
+  const { workspaceId } = await requireIntegrationAccess(req);
+  const q = new URL(req.url).searchParams.get("q")?.trim().slice(0, 200) ?? "";
   if (!q) return NextResponse.json({ tasks: [], lists: [] });
 
   const [tasks, lists] = await Promise.all([
     prisma.task.findMany({
-      where: { name: { contains: q, mode: "insensitive" }, archived: false },
+      where: { name: { contains: q, mode: "insensitive" }, archived: false, list: { space: { workspaceId } } },
       take: 12,
       orderBy: { updatedAt: "desc" },
       select: {
@@ -19,7 +22,7 @@ export async function GET(req: NextRequest) {
       },
     }),
     prisma.list.findMany({
-      where: { name: { contains: q, mode: "insensitive" } },
+      where: { name: { contains: q, mode: "insensitive" }, space: { workspaceId } },
       take: 6,
       select: {
         id: true,
@@ -31,4 +34,4 @@ export async function GET(req: NextRequest) {
   ]);
 
   return NextResponse.json({ tasks, lists });
-}
+});

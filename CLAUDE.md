@@ -26,7 +26,7 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind 4 · Prisma 7 + Po
 - **SPA-style**: all interactive UI is client components backed by REST Route Handlers in `app/api/**`. TanStack Query for fetching + optimistic updates. No server actions.
 - **Routing**: route group `app/(app)/` — `layout.tsx` renders `<AppShell>` (sidebar + Cmd+K palette); `l/[listId]/page.tsx` renders the list with its view tabs. Task modal opens via `?task=<id>` (shareable URLs).
 - **Data layer**: `lib/db.ts` (Prisma client w/ pg adapter), `lib/queries.ts` (shared include shapes + exported payload TYPES — single source of truth for API↔client), `lib/tasks.ts` / `lib/hierarchy.ts` (mutation services), `lib/hooks.ts` (all TanStack Query hooks), `lib/api.ts` (apiGet/apiSend).
-- **Auth**: `lib/auth.ts` — current user via `cu_uid` cookie, falls back to workspace owner. Switch user via `/api/me` (sidebar footer `UserSwitcher`).
+- **Auth**: `lib/auth.ts` resolves the current user from a server-side session. Integration routes opt into workspace-scoped bearer tokens through `lib/integration-access.ts`. Token management requires a signed-in browser session.
 - **View state**: `lib/view-state.ts` (filters/sort/groupBy applied client-side in `list-page.tsx` via `applyViewState`), `lib/grouping.ts` (`groupTasks` for List view group-by).
 - **Components**: `components/views/*` (list/board/calendar/gantt/table + filter-sort + custom-field controls), `components/menus/*` (status/priority/assignee/date/tag controls), `components/task/*` (modal, checklists), `components/status/*` (status manager), `components/sidebar/*`.
 

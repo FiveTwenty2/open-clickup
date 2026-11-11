@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getListData } from "@/lib/queries";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireIntegrationAccess, requireListInWorkspace } from "@/lib/integration-access";
 import { requireRole } from "@/lib/permissions";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
 
@@ -12,9 +12,10 @@ const schema = z.object({
   color: z.string().nullish(),
 });
 
-export const GET = route(async (_req, { params }: Ctx) => {
+export const GET = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  await requireUser();
+  const { workspaceId } = await requireIntegrationAccess(req);
+  await requireListInWorkspace(listId, workspaceId);
   const data = await getListData(listId);
   if (!data) throw new ApiError(404, "List not found");
   return NextResponse.json(data);

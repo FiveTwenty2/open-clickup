@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { updateTask } from "@/lib/tasks";
 import { getTaskDetail } from "@/lib/queries";
 import { requireRole } from "@/lib/permissions";
+import { requireIntegrationAccess, requireTaskInWorkspace, requireWorkspaceUsers } from "@/lib/integration-access";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 
@@ -25,8 +26,10 @@ const patchSchema = z.object({
   watcherIds: z.array(z.string()).optional(),
 });
 
-export const GET = route(async (_req, { params }: Ctx) => {
+export const GET = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
+  const { workspaceId } = await requireIntegrationAccess(req);
+  await requireTaskInWorkspace(taskId, workspaceId);
   const task = await getTaskDetail(taskId);
   if (!task) throw new ApiError(404, "Task not found");
   return NextResponse.json(task);
@@ -35,14 +38,22 @@ export const GET = route(async (_req, { params }: Ctx) => {
 export const PATCH = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
   const patch = await readJson(req, patchSchema);
-  const { user } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const target = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireWorkspaceUsers(workspaceId, [...(patch.assigneeIds ?? []), ...(patch.watcherIds ?? [])]);
+  if (patch.tagIds?.length) {
+    const ids = [...new Set(patch.tagIds)];
+    const count = await prisma.tag.count({ where: { id: { in: ids }, spaceId: target.list.spaceId } });
+    if (count !== ids.length) throw new ApiError(400, "Select tags from this space");
+  }
   const task = await updateTask(taskId, patch, user.id);
   return NextResponse.json(task);
 });
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { taskId } = await params;
-  await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("MEMBER");
+  await requireTaskInWorkspace(taskId, workspaceId);
   const task = await prisma.task.findUnique({ where: { id: taskId }, select: { listId: true } });
   await prisma.task.delete({ where: { id: taskId } });
   if (task) publish({ type: "list", listId: task.listId });

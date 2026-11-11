@@ -9,6 +9,8 @@ import { useWorkspace } from "@/components/workspace-context";
 import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
 import { StatusControl } from "@/components/menus/status-control";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
+import { isCompletedStatus } from "@/lib/task-status";
 import { PriorityControl } from "@/components/menus/priority-control";
 import { AssigneeControl } from "@/components/menus/assignee-control";
 import { DueDate } from "@/components/ui/primitives";
@@ -160,8 +162,8 @@ function TableGroup({
           {shown.map((task) => {
             const isSelected = selected.has(task.id);
             return (
+            <TaskContextMenu key={task.id} task={task} statuses={statuses} onOpen={() => onOpenTask(task.id)}>
             <div
-              key={task.id}
               className={cn(
                 "group/row grid cursor-pointer items-center border-b border-cu-border/60 hover:bg-cu-hover/50",
                 isSelected && "bg-cu-purple-light/40",
@@ -181,7 +183,7 @@ function TableGroup({
                   )}
                 />
                 <span onClick={(e) => e.stopPropagation()}>
-                  <StatusControl current={task.status} statuses={statuses} onChange={(s) => onUpdate(task.id, { statusId: s })} />
+                  <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
                 </span>
                 <span className="truncate text-[13px]">{task.name}</span>
               </Cell>
@@ -195,7 +197,7 @@ function TableGroup({
                 <PriorityControl value={task.priority} onChange={(p) => onUpdate(task.id, { priority: p })} />
               </Cell>
               <Cell className="text-[13px] text-cu-text-secondary">
-                {task.dueDate ? <DueDate date={task.dueDate} done={task.status.type === "DONE"} /> : <span className="text-cu-text-tertiary">—</span>}
+                {task.dueDate ? <DueDate date={task.dueDate} done={isCompletedStatus(task.status.type)} /> : <span className="text-cu-text-tertiary">—</span>}
               </Cell>
               <Cell className="text-[13px] text-cu-text-secondary">
                 {task.startDate ? <DueDate date={task.startDate} /> : <span className="text-cu-text-tertiary">—</span>}
@@ -207,6 +209,7 @@ function TableGroup({
               ))}
               <Cell />
             </div>
+            </TaskContextMenu>
             );
           })}
           {hidden > 0 && (

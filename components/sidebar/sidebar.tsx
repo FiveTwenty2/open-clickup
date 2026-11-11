@@ -24,7 +24,6 @@ import {
   LogOut,
   Star,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { apiSend } from "@/lib/api";
 import { useWorkspace } from "@/components/workspace-context";
@@ -32,6 +31,7 @@ import { useHierarchy } from "@/lib/hooks";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { InboxButton } from "@/components/sidebar/inbox";
 import { ProfileDialog } from "@/components/profile-dialog";
+import { ApiTokensDialog } from "@/components/api-tokens-dialog";
 import type { SpaceNode, FolderNode, ListNode } from "@/lib/queries";
 import { Avatar } from "@/components/ui/avatar";
 
@@ -190,16 +190,9 @@ function NavItem({
 }
 
 function UserSwitcher() {
-  const { workspace, currentUser } = useWorkspace();
-  const qc = useQueryClient();
-  const members = workspace.members.map((m) => m.user);
+  const { currentUser } = useWorkspace();
   const [profileOpen, setProfileOpen] = useState(false);
-
-  async function switchTo(userId: string) {
-    if (userId === currentUser.id) return;
-    await apiSend("/api/me", "POST", { userId });
-    qc.invalidateQueries();
-  }
+  const [tokensOpen, setTokensOpen] = useState(false);
 
   async function logout() {
     await apiSend("/api/auth/logout", "POST");
@@ -221,26 +214,14 @@ function UserSwitcher() {
           sideOffset={6}
           className="z-50 min-w-[220px] rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg"
         >
-          <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-cu-text-tertiary">
-            Switch user
-          </div>
-          {members.map((u) => (
-            <DropdownMenu.Item
-              key={u.id}
-              onSelect={() => switchTo(u.id)}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover focus:bg-cu-hover"
-            >
-              <Avatar user={u} size="md" />
-              <span className="flex-1 truncate">{u.name}</span>
-              {u.id === currentUser.id && <span className="text-[11px] text-cu-purple">current</span>}
-            </DropdownMenu.Item>
-          ))}
-          <DropdownMenu.Separator className="my-1 h-px bg-cu-border" />
           <DropdownMenu.Item
             onSelect={() => setProfileOpen(true)}
             className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover focus:bg-cu-hover"
           >
             <Settings className="h-4 w-4" /> Edit profile
+          </DropdownMenu.Item>
+          <DropdownMenu.Item onSelect={() => setTokensOpen(true)} className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">
+            API tokens
           </DropdownMenu.Item>
           <DropdownMenu.Item
             onSelect={logout}
@@ -251,6 +232,7 @@ function UserSwitcher() {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
       <ProfileDialog open={profileOpen} onClose={() => setProfileOpen(false)} />
+      {tokensOpen && <ApiTokensDialog onClose={() => setTokensOpen(false)} />}
     </DropdownMenu.Root>
   );
 }

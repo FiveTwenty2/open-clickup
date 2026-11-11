@@ -1,6 +1,7 @@
 import type { TaskWithRelations } from "@/lib/queries";
 import type { Priority } from "@/lib/enums";
 import { PRIORITY_CONFIG } from "@/lib/constants";
+import { isCompletedStatus } from "@/lib/task-status";
 
 export type SortField = "priority" | "dueDate" | "name" | "created" | null;
 export type GroupBy = "status" | "assignee" | "priority" | "none";
@@ -10,6 +11,7 @@ export type ViewState = {
     priorities: Priority[];
     assignees: string[];
     tags: string[];
+    completion?: "open" | "closed" | "all";
   };
   sort: { field: SortField; dir: "asc" | "desc" };
   groupBy: GroupBy;
@@ -25,7 +27,8 @@ export function countActiveFilters(vs: ViewState): number {
   return (
     vs.filters.priorities.length +
     vs.filters.assignees.length +
-    vs.filters.tags.length
+    vs.filters.tags.length +
+    Number(!!vs.filters.completion && vs.filters.completion !== "all")
   );
 }
 
@@ -34,7 +37,11 @@ export function applyViewState(
   vs: ViewState,
 ): TaskWithRelations[] {
   let out = tasks;
-  const { priorities, assignees, tags } = vs.filters;
+  const { priorities, assignees, tags, completion } = vs.filters;
+
+  if (completion && completion !== "all") {
+    out = out.filter((task) => isCompletedStatus(task.status.type) === (completion === "closed"));
+  }
 
   if (priorities.length) {
     const set = new Set(priorities);

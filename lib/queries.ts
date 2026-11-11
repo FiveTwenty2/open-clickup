@@ -37,9 +37,9 @@ export type UserLite = Prisma.UserGetPayload<{ select: typeof userSelect }>;
 // Workspace tree (for sidebar)
 // ----------------------------------------------------------------------------
 
-export async function getWorkspaceTree() {
+export async function getWorkspaceTree(workspaceId: string) {
   const workspace = await prisma.workspace.findFirst({
-    orderBy: { createdAt: "asc" },
+    where: { id: workspaceId },
     include: {
       members: { include: { user: { select: userSelect } } },
       spaces: {

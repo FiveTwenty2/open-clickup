@@ -30,9 +30,11 @@ import { useWorkspace } from "@/components/workspace-context";
 import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
 import type { Priority } from "@/lib/enums";
-import { StatusCircle } from "@/components/menus/status-control";
+import { StatusCircle, StatusControl } from "@/components/menus/status-control";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
 import { PriorityFlag, DueDate, TagChip } from "@/components/ui/primitives";
 import { AvatarStack } from "@/components/ui/avatar";
+import { isCompletedStatus } from "@/lib/task-status";
 
 type Columns = Record<string, TaskWithRelations[]>;
 
@@ -40,10 +42,12 @@ export function BoardView({
   data,
   onOpenTask,
   groupBy = "status",
+  canReorder = true,
 }: {
   data: ListData;
   onOpenTask: (id: string) => void;
   groupBy?: GroupBy;
+  canReorder?: boolean;
 }) {
   const { list, tasks } = data;
   const statuses = list.statuses;
@@ -76,7 +80,8 @@ export function BoardView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } });
+  const sensors = useSensors(canReorder ? pointerSensor : undefined);
 
   const activeTask = useMemo(
     () => (activeId ? Object.values(columns).flat().find((t) => t.id === activeId) ?? null : null),
@@ -169,6 +174,7 @@ export function BoardView({
                 listId={list.id}
                 firstStatusId={firstStatusId}
                 status={groupBy === "status" ? statusById.get(group.id) : undefined}
+                statuses={statuses}
                 onOpenTask={onOpenTask}
                 onCollapse={() => toggleCollapse(group.id)}
               />
@@ -188,7 +194,7 @@ function fromGroups(groups: TaskGroup[]): Columns {
   const seen = new Set<string>();
   for (const g of groups) {
     cols[g.id] = [];
-    for (const t of [...g.tasks].sort((a, b) => a.position - b.position)) {
+    for (const t of g.tasks) {
       if (seen.has(t.id)) continue;
       seen.add(t.id);
       cols[g.id].push(t);
@@ -203,6 +209,7 @@ function Column({
   listId,
   firstStatusId,
   status,
+  statuses,
   onOpenTask,
   onCollapse,
 }: {
@@ -211,6 +218,7 @@ function Column({
   listId: string;
   firstStatusId: string | undefined;
   status: StatusModel | undefined;
+  statuses: StatusModel[];
   onOpenTask: (id: string) => void;
   onCollapse: () => void;
 }) {
@@ -262,7 +270,7 @@ function Column({
           )}
         >
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} onOpenTask={onOpenTask} />
+            <SortableCard key={task.id} task={task} statuses={statuses} onOpenTask={onOpenTask} />
           ))}
         </div>
       </SortableContext>
@@ -364,12 +372,14 @@ function WipEditor({ status, listId }: { status: StatusModel; listId: string }) 
   );
 }
 
-function SortableCard({ task, onOpenTask }: { task: TaskWithRelations; onOpenTask: (id: string) => void }) {
+function SortableCard({ task, statuses, onOpenTask }: { task: TaskWithRelations; statuses: StatusModel[]; onOpenTask: (id: string) => void }) {
+  const update = useUpdateTask(task.listId);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: "card" },
   });
   return (
+    <TaskContextMenu task={task} statuses={statuses} onOpen={() => onOpenTask(task.id)}>
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
@@ -378,12 +388,17 @@ function SortableCard({ task, onOpenTask }: { task: TaskWithRelations; onOpenTas
       {...listeners}
       onClick={() => onOpenTask(task.id)}
     >
-      <Card task={task} />
+      <Card task={task} statusControl={
+        <span onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+          <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(statusId) => update.mutate({ taskId: task.id, patch: { statusId } })} />
+        </span>
+      } />
     </div>
+    </TaskContextMenu>
   );
 }
 
-function Card({ task, overlay }: { task: TaskWithRelations; overlay?: boolean }) {
+function Card({ task, overlay, statusControl }: { task: TaskWithRelations; overlay?: boolean; statusControl?: React.ReactNode }) {
   return (
     <div
       className={cn(
@@ -393,7 +408,7 @@ function Card({ task, overlay }: { task: TaskWithRelations; overlay?: boolean })
     >
       <div className="flex items-start gap-1.5">
         <span className="mt-0.5">
-          <StatusCircle status={task.status} size={14} />
+          {statusControl ?? <StatusCircle status={task.status} size={14} />}
         </span>
         <span className="flex-1 text-[13px] leading-snug text-cu-text">{task.name}</span>
         <PriorityFlag priority={task.priority} />
@@ -408,7 +423,7 @@ function Card({ task, overlay }: { task: TaskWithRelations; overlay?: boolean })
       )}
 
       <div className="mt-2 flex items-center gap-2 pl-5 text-cu-text-tertiary">
-        {task.dueDate && <DueDate date={task.dueDate} done={task.status.type === "DONE"} />}
+        {task.dueDate && <DueDate date={task.dueDate} done={isCompletedStatus(task.status.type)} />}
         <div className="ml-auto flex items-center gap-2">
           {task._count.subtasks > 0 && (
             <span className="flex items-center gap-0.5 text-[11px]">

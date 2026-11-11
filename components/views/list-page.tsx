@@ -33,6 +33,9 @@ import { TableView } from "@/components/views/table-view";
 import { TaskModal } from "@/components/task/task-modal";
 import { StatusManager } from "@/components/status/status-manager";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Popover from "@radix-ui/react-popover";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ListWithMeta } from "@/lib/queries";
 
 const VIEW_ICON: Record<ViewType, React.ReactNode> = {
   LIST: <ListIcon className="h-4 w-4" />,
@@ -50,6 +53,7 @@ function vsFromConfig(config: unknown): ViewState {
         priorities: c.filters?.priorities ?? [],
         assignees: c.filters?.assignees ?? [],
         tags: c.filters?.tags ?? [],
+        completion: c.filters?.completion ?? "all",
       },
       sort: { field: c.sort?.field ?? null, dir: c.sort?.dir ?? "asc" },
       groupBy: c.groupBy ?? "status",
@@ -61,7 +65,7 @@ function vsFromConfig(config: unknown): ViewState {
 export function ListPage({ listId }: { listId: string }) {
   const { data, isLoading, error } = useList(listId);
   const create = useCreateTask(listId);
-  const { favorites } = useWorkspace();
+  const { favorites, currentUser } = useWorkspace();
   const toggleFav = useToggleFavorite();
   const isFav = favorites.includes(listId);
   const router = useRouter();
@@ -73,6 +77,12 @@ export function ListPage({ listId }: { listId: string }) {
   const [statusMgr, setStatusMgr] = useState(false);
   const [templatePicker, setTemplatePicker] = useState(false);
   const [vs, setVs] = useState<ViewState>(EMPTY_VIEW_STATE);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [addingView, setAddingView] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const [viewType, setViewType] = useState<ViewType>("LIST");
+  const client = useQueryClient();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const views = data?.list.views ?? [];
@@ -90,6 +100,16 @@ export function ListPage({ listId }: { listId: string }) {
     setActiveViewId(view.id);
     setVs(vsFromConfig(view.config)); // load — does NOT trigger a save
   }
+
+  const createView = useMutation({
+    mutationFn: () => apiSend<ListWithMeta["views"][number]>(`/api/lists/${listId}/views`, "POST", { name: viewName, type: viewType }),
+    onSuccess: async (view) => {
+      await client.invalidateQueries({ queryKey: ["list", listId] });
+      selectView(view);
+      setAddingView(false);
+      setViewName("");
+    },
+  });
 
   function updateVs(next: ViewState) {
     setVs(next);
@@ -111,8 +131,15 @@ export function ListPage({ listId }: { listId: string }) {
   }
 
   const shownData = useMemo(
-    () => (data ? { ...data, tasks: applyViewState(data.tasks, vs) } : data),
-    [data, vs],
+    () => {
+      if (!data) return data;
+      const term = query.trim().toLocaleLowerCase();
+      const tasks = term ? data.tasks.filter((task) =>
+        task.name.toLocaleLowerCase().includes(term)
+          || task.subtasks.some((subtask) => subtask.name.toLocaleLowerCase().includes(term))) : data.tasks;
+      return { ...data, tasks: applyViewState(tasks, vs) };
+    },
+    [data, query, vs],
   );
 
   async function addTask() {
@@ -214,17 +241,41 @@ export function ListPage({ listId }: { listId: string }) {
               {v.name}
             </button>
           ))}
-          <button className="flex items-center gap-1 px-2 py-2 text-[13px] text-cu-text-tertiary hover:text-cu-text">
-            <Plus className="h-4 w-4" /> View
-          </button>
+          <Popover.Root open={addingView} onOpenChange={setAddingView}>
+            <Popover.Trigger asChild>
+              <button className="flex items-center gap-1 px-2 py-2 text-[13px] text-cu-text-tertiary hover:text-cu-text" aria-label="Add view">
+                <Plus className="h-4 w-4" /> View
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content align="start" className="z-50 rounded border border-cu-border bg-cu-panel p-3 shadow-lg">
+                <form className="grid gap-2 text-sm" onSubmit={(event) => { event.preventDefault(); createView.mutate(); }}>
+                  <label className="grid gap-1">View name <input autoFocus required maxLength={80} value={viewName} onChange={(event) => setViewName(event.target.value)} className="rounded border border-cu-border bg-cu-bg p-1.5" /></label>
+                  <label className="grid gap-1">View type
+                    <select value={viewType} onChange={(event) => setViewType(event.target.value as ViewType)} className="rounded border border-cu-border bg-cu-bg p-1.5">
+                      {Object.values(ViewType).map((type) => <option key={type} value={type}>{type[0] + type.slice(1).toLowerCase()}</option>)}
+                    </select>
+                  </label>
+                  {createView.isError && <p role="alert">Could not create this view.</p>}
+                  <button disabled={!viewName.trim() || createView.isPending} className="rounded bg-cu-purple px-2 py-1.5 text-white disabled:opacity-50">Create view</button>
+                </form>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
         </div>
 
         <div className="flex items-center gap-1 text-cu-text-secondary">
-          <ToolbarButton icon={<Users className="h-4 w-4" />} label="Assignee" />
+          <button
+            aria-pressed={vs.filters.assignees.length === 1 && vs.filters.assignees[0] === currentUser.id}
+            onClick={() => updateVs({ ...vs, filters: { ...vs.filters, assignees: vs.filters.assignees.length === 1 && vs.filters.assignees[0] === currentUser.id ? [] : [currentUser.id] } })}
+            className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[13px] hover:bg-cu-hover aria-pressed:text-cu-purple"
+          >
+            <Users className="h-4 w-4" /> <span className="hidden sm:inline">Assigned to me</span>
+          </button>
           <GroupMenu state={vs} onChange={updateVs} />
           <FilterMenu state={vs} onChange={updateVs} tasks={data.tasks} />
           <SortMenu state={vs} onChange={updateVs} />
-          <button className="rounded p-1.5 hover:bg-cu-hover">
+          <button aria-label="Search this list" aria-expanded={searchOpen} onClick={() => { setSearchOpen(!searchOpen); if (searchOpen) setQuery(""); }} className="rounded p-1.5 hover:bg-cu-hover">
             <Search className="h-4 w-4" />
           </button>
           <button
@@ -235,6 +286,12 @@ export function ListPage({ listId }: { listId: string }) {
           </button>
         </div>
       </div>
+      {searchOpen && (
+        <div className="flex gap-2 border-b border-cu-border px-4 py-2">
+          <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search tasks and subtasks" placeholder="Search tasks and subtasks" className="w-full rounded border border-cu-border bg-cu-panel px-3 py-1.5 text-sm" />
+          {query && <button onClick={() => setQuery("")} className="px-2 text-sm text-cu-purple">Clear search</button>}
+        </div>
+      )}
 
       {/* active view */}
       {shownData && shownData.tasks.length === 0 ? (
@@ -261,8 +318,8 @@ export function ListPage({ listId }: { listId: string }) {
         )
       ) : (
         <>
-          {activeView?.type === "LIST" && <ListView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
-          {activeView?.type === "BOARD" && <BoardView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
+          {activeView?.type === "LIST" && <ListView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={!vs.sort.field && !query.trim()} />}
+          {activeView?.type === "BOARD" && <BoardView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={!vs.sort.field && !query.trim()} />}
           {activeView?.type === "CALENDAR" && <CalendarView data={shownData!} onOpenTask={setOpenTaskId} />}
           {activeView?.type === "GANTT" && <GanttView data={shownData!} onOpenTask={setOpenTaskId} />}
           {activeView?.type === "TABLE" && <TableView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
@@ -283,15 +340,6 @@ export function ListPage({ listId }: { listId: string }) {
         />
       )}
     </div>
-  );
-}
-
-function ToolbarButton({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <button className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[13px] hover:bg-cu-hover">
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
   );
 }
 

@@ -64,6 +64,18 @@ export function FilterMenu({
           align="end"
           className="z-50 max-h-[420px] w-[260px] overflow-y-auto rounded-lg border border-cu-border bg-cu-panel p-2 shadow-lg"
         >
+          <label className="mb-3 grid gap-1 text-[13px]">
+            Completion
+            <select
+              value={state.filters.completion ?? "all"}
+              onChange={(event) => onChange({ ...state, filters: { ...state.filters, completion: event.target.value as "all" | "open" | "closed" } })}
+              className="rounded border border-cu-border bg-cu-panel px-2 py-1"
+            >
+              <option value="all">All tasks</option>
+              <option value="open">Open tasks</option>
+              <option value="closed">Closed tasks</option>
+            </select>
+          </label>
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-cu-text-tertiary">Priority</span>
             {count > 0 && (

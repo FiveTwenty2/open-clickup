@@ -4,6 +4,8 @@ import { taskInclude } from "@/lib/queries";
 import { publish } from "@/lib/events";
 import { createNotifications } from "@/lib/notifications";
 import { nextOccurrence, type Recurrence } from "@/lib/recurrence";
+import { ApiError } from "@/lib/api-helpers";
+import { isCompletedStatus } from "@/lib/task-status";
 
 export async function createTask(input: {
   listId: string;
@@ -15,14 +17,17 @@ export async function createTask(input: {
   createdById?: string;
 }) {
   // resolve status (default = first status of the list)
-  let statusId = input.statusId;
-  if (!statusId) {
-    const first = await prisma.status.findFirst({
-      where: { listId: input.listId },
-      orderBy: { position: "asc" },
+  const status = await prisma.status.findFirst({
+    where: { id: input.statusId, listId: input.listId },
+    orderBy: { position: "asc" },
+  });
+  if (!status) throw new ApiError(400, "Select a status from this list");
+  if (input.parentId) {
+    const parent = await prisma.task.findFirst({
+      where: { id: input.parentId, listId: input.listId, archived: false },
+      select: { id: true },
     });
-    if (!first) throw new Error("List has no statuses");
-    statusId = first.id;
+    if (!parent) throw new ApiError(400, "Select a parent task from this list");
   }
 
   // position at end of its group
@@ -35,7 +40,8 @@ export async function createTask(input: {
   const task = await prisma.task.create({
     data: {
       listId: input.listId,
-      statusId,
+      statusId: status.id,
+      completedAt: isCompletedStatus(status.type) ? new Date() : null,
       parentId: input.parentId ?? null,
       name: input.name,
       priority: input.priority ?? null,
@@ -77,7 +83,7 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
     where: { id: taskId },
     include: { assignees: true, tags: true, watchers: true, status: true },
   });
-  if (!existing) throw new Error("Task not found");
+  if (!existing) throw new ApiError(404, "Task not found");
 
   const data: Record<string, unknown> = {};
   if (patch.name !== undefined) data.name = patch.name;
@@ -111,8 +117,10 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
   if (patch.statusId !== undefined && patch.statusId !== existing.statusId) {
     data.statusId = patch.statusId;
     const newStatus = await prisma.status.findUnique({ where: { id: patch.statusId } });
-    becameDone = newStatus?.type === "DONE";
-    data.completedAt = becameDone ? new Date() : null;
+    if (!newStatus || newStatus.listId !== existing.listId) throw new ApiError(400, "Select a status from this list");
+    const completed = isCompletedStatus(newStatus.type);
+    becameDone = completed && !isCompletedStatus(existing.status.type);
+    data.completedAt = completed ? existing.completedAt ?? new Date() : null;
     activityLog.push({ type: "status_changed", data: { fromId: existing.statusId, toId: patch.statusId } });
   }
 

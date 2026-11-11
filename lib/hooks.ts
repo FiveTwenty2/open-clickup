@@ -10,6 +10,7 @@ import { useEffect } from "react";
 import { apiGet, apiSend } from "@/lib/api";
 import type { ListData, TaskWithRelations, UserLite, WorkspaceTree } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
+import { isCompletedStatus } from "@/lib/task-status";
 
 export type Bootstrap = { currentUser: UserLite; workspace: WorkspaceTree; favorites: string[] };
 
@@ -247,11 +248,22 @@ export function useUpdateTask(listId: string | undefined) {
       await qc.cancelQueries({ queryKey: ["list", listId] });
       const prev = qc.getQueryData<ListData>(["list", listId]);
       if (prev) {
+        const status = prev.list.statuses.find((item) => item.id === patch.statusId);
         qc.setQueryData<ListData>(["list", listId], {
           ...prev,
-          tasks: prev.tasks.map((t) =>
-            t.id === taskId ? applyOptimistic(t, patch) : t,
-          ),
+          tasks: prev.tasks.map((task) => {
+            if (task.id === taskId) {
+              const next = applyOptimistic(task, patch);
+              return status ? { ...next, status, completedAt: isCompletedStatus(status.type) ? task.completedAt ?? new Date() : null } : next;
+            }
+            if (!status || !task.subtasks.some((subtask) => subtask.id === taskId)) return task;
+            return {
+              ...task,
+              subtasks: task.subtasks.map((subtask) => subtask.id === taskId
+                ? { ...subtask, status, statusId: status.id }
+                : subtask),
+            };
+          }),
         });
       }
       return { prev };
@@ -259,8 +271,10 @@ export function useUpdateTask(listId: string | undefined) {
     onError: (_e, _v, ctx) => {
       if (ctx?.prev && listId) qc.setQueryData(["list", listId], ctx.prev);
     },
-    onSettled: () => {
+    onSettled: (task, _error, { taskId }) => {
       if (listId) qc.invalidateQueries({ queryKey: ["list", listId] });
+      qc.invalidateQueries({ queryKey: ["task", taskId] });
+      if (task?.parentId) qc.invalidateQueries({ queryKey: ["task", task.parentId] });
     },
   });
 }

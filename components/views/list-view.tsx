@@ -33,7 +33,9 @@ import { useUpdateTask, useCreateTask, useSetFieldValue, useDeleteTask, useDupli
 import { useWorkspace } from "@/components/workspace-context";
 import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
-import { StatusControl, StatusCircle } from "@/components/menus/status-control";
+import { StatusControl } from "@/components/menus/status-control";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
+import { isCompletedStatus } from "@/lib/task-status";
 import { PriorityControl } from "@/components/menus/priority-control";
 import { AssigneeControl } from "@/components/menus/assignee-control";
 import { DateControl } from "@/components/menus/date-control";
@@ -49,10 +51,12 @@ export function ListView({
   data,
   onOpenTask,
   groupBy = "status",
+  canReorder = true,
 }: {
   data: ListData;
   onOpenTask: (taskId: string) => void;
   groupBy?: GroupBy;
+  canReorder?: boolean;
 }) {
   const { list, tasks } = data;
   const statuses = list.statuses;
@@ -74,7 +78,7 @@ export function ListView({
   const clearSelect = () => setSelected(new Set());
 
   // drag-to-reorder is enabled only when grouping by status (cross-group = status change)
-  const sortable = groupBy === "status";
+  const sortable = groupBy === "status" && canReorder;
   const [cols, setCols] = useState<Record<string, TaskWithRelations[]>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -428,6 +432,7 @@ function TaskRow({
 
   return (
     <>
+      <TaskContextMenu task={task} statuses={statuses} onOpen={() => onOpenTask(task.id)} onRename={() => setRenaming(true)}>
       <div
         className={cn(
           "group grid cursor-pointer items-center border-t border-cu-border/60 px-3",
@@ -462,7 +467,7 @@ function TaskRow({
             ) : null}
           </span>
           <span onClick={(e) => e.stopPropagation()}>
-            <StatusControl current={task.status} statuses={statuses} onChange={(s) => onUpdate(task.id, { statusId: s })} />
+            <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
           </span>
           {renaming ? (
             <input
@@ -509,7 +514,7 @@ function TaskRow({
         <div className="py-2 text-cu-text-secondary" onClick={(e) => e.stopPropagation()}>
           <DateControl
             value={task.dueDate}
-            done={task.status.type === "DONE"}
+            done={isCompletedStatus(task.status.type)}
             onChange={(d) => onUpdate(task.id, { dueDate: d ? d.toISOString() : null })}
             placeholder=""
           />
@@ -532,7 +537,7 @@ function TaskRow({
         <div className="flex justify-center py-2" onClick={(e) => e.stopPropagation()}>
           <DropdownMenu.Root>
             <DropdownMenu.Trigger asChild>
-              <button className="hidden rounded p-1 text-cu-text-tertiary hover:bg-cu-hover hover:text-cu-text group-hover:block">
+              <button aria-label={`Actions for ${task.name}`} className="rounded p-1 text-cu-text-tertiary opacity-0 hover:bg-cu-hover hover:text-cu-text focus:opacity-100 group-hover:opacity-100">
                 <Ellipsis className="h-4 w-4" />
               </button>
             </DropdownMenu.Trigger>
@@ -547,29 +552,31 @@ function TaskRow({
           </DropdownMenu.Root>
         </div>
       </div>
+      </TaskContextMenu>
 
       {expanded &&
         task.subtasks.map((sub) => (
+          <TaskContextMenu key={sub.id} task={sub} statuses={statuses} onOpen={() => onOpenTask(sub.id)}>
           <div
-            key={sub.id}
             className="grid cursor-pointer items-center border-t border-cu-border/40 bg-cu-sidebar/40 px-3 hover:bg-cu-hover/60"
             style={gridStyle}
             onClick={() => onOpenTask(sub.id)}
           >
             <div className="flex items-center gap-1.5 py-2 pl-8">
-              <StatusCircle status={sub.status} />
+              <StatusControl current={sub.status} statuses={statuses} taskName={sub.name} onChange={(statusId) => onUpdate(sub.id, { statusId })} />
               <span className="truncate text-[13px] text-cu-text">{sub.name}</span>
             </div>
             <div className="py-2">
-              {sub.assignees.length > 0 && (
-                <AssigneeControl assignees={sub.assignees.map((a) => a.user)} onChange={() => {}} />
-              )}
+              <span onClick={(event) => event.stopPropagation()}>
+                <AssigneeControl assignees={sub.assignees.map((a) => a.user)} onChange={(assigneeIds) => onUpdate(sub.id, { assigneeIds })} />
+              </span>
             </div>
             <div />
             <div />
             {customFields.map((f) => <div key={f.id} />)}
             <div />
           </div>
+          </TaskContextMenu>
         ))}
     </>
   );

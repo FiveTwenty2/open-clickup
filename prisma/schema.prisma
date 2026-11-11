@@ -32,6 +32,7 @@ model User {
   watching      TaskWatcher[]
   reactions     CommentReaction[]
   sessions      Session[]
+  apiTokens     ApiToken[]
   notifications Notification[]    @relation("NotifRecipient")
   actedNotifs   Notification[]    @relation("NotifActor")
   timeEntries   TimeEntry[]
@@ -72,6 +73,22 @@ model Session {
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ApiToken {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  name        String
+  digest      String   @unique
+  prefix      String
+  writable    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
