@@ -44,6 +44,7 @@ export default function WorkspacePage() {
 
   return <main className="flex-1 overflow-auto p-5 sm:p-8">
     <h1 className="text-xl font-semibold">{workspace.name} members</h1>
+    <a href="/workspace/status-workflows" className="text-sm text-cu-purple hover:underline">Status workflows</a>
     {admin && <section className="my-4 rounded-lg border border-cu-border bg-cu-panel p-4">
       <h2 className="font-semibold">Invite a teammate</h2>
       <p className="mb-3 text-sm text-cu-text-secondary">Copy the invitation link and share it with the invited person. It expires after seven days.</p>

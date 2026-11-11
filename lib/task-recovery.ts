@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireTaskBranchPermission } from "@/lib/resource-permissions";
 
 export async function trashTasks(workspaceId: string, ids: string[], actorId: string) {
   const moved = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
     const roots = await tx.task.findMany({
       where: { id: { in: ids }, deletedAt: null, list: { space: { workspaceId } } },
       select: { id: true, listId: true },
@@ -11,6 +13,7 @@ export async function trashTasks(workspaceId: string, ids: string[], actorId: st
     if (roots.length !== new Set(ids).size) throw new ApiError(404, "Some tasks are no longer available");
     const now = new Date();
     for (const root of roots) {
+      await requireTaskBranchPermission(root.id, permissionLevels.FULL, tx);
       // A previously trashed descendant retains its own recovery group.
       const changed = await tx.$queryRaw<{ id: string }[]>`
         WITH RECURSIVE branch(id) AS (
@@ -35,11 +38,13 @@ export async function trashTasks(workspaceId: string, ids: string[], actorId: st
 
 export async function restoreTask(workspaceId: string, id: string, actorId: string) {
   const listId = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
     const task = await tx.task.findFirst({
       where: { id, list: { space: { workspaceId } } },
       select: { archived: true, deletedAt: true, listId: true, trashRootId: true, parent: { select: { deletedAt: true } } },
     });
     if (!task) throw new ApiError(404, "Task not found");
+    await requireTaskBranchPermission(id, permissionLevels.FULL, tx);
     if (task.parent?.deletedAt) throw new ApiError(409, "Restore the parent task first");
     if (task.deletedAt) {
       if (task.trashRootId !== id) throw new ApiError(409, "Restore the task group from Trash");

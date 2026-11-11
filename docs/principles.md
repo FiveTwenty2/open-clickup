@@ -43,7 +43,8 @@ training-data Next.js behavior.
 
 - Every mutating route calls `requireRole(...)` from `lib/permissions.ts`
   (or `requireUser()` for read/self routes). Default to `MEMBER` for writes;
-  `ADMIN` for space/workspace management. Guests are read-only.
+  `ADMIN` for space/workspace management. Item routes that accept guest writes
+  must check the corresponding item permission. Guests have view access by default.
 - Validate every request body with Zod via `readJson(req, schema)`.
 - Never leak `passwordHash`; never trust the client for authorization.
 

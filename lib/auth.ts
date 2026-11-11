@@ -1,3 +1,4 @@
+import { setAccessActor } from "@/lib/access-context";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/api-helpers";
@@ -42,6 +43,8 @@ export async function getCurrentUser() {
 export async function requireUser() {
   const user = await getCurrentUser();
   if (!user) throw new ApiError(401, "Not authenticated");
+  const membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id }, orderBy: { createdAt: "asc" } });
+  if (membership) setAccessActor(user.id, membership.workspaceId);
   return user;
 }
 

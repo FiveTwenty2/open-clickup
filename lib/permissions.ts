@@ -1,5 +1,6 @@
+import { setAccessActor } from "@/lib/access-context";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { ApiError } from "@/lib/api-helpers";
 
 export type Role = "GUEST" | "MEMBER" | "ADMIN" | "OWNER";
@@ -20,10 +21,12 @@ export async function getMembership(userId: string) {
  * Single-workspace app: resolves the user's first membership.
  */
 export async function requireRole(min: Role) {
-  const user = await requireUser();
+  const user = await getCurrentUser();
+  if (!user) throw new ApiError(401, "Not authenticated");
   const membership = await getMembership(user.id);
   if (!membership || ROLE_RANK[membership.role as Role] < ROLE_RANK[min]) {
     throw new ApiError(403, `This action requires ${min.toLowerCase()} access.`);
   }
+  setAccessActor(user.id, membership.workspaceId);
   return { user, role: membership.role as Role, workspaceId: membership.workspaceId };
 }

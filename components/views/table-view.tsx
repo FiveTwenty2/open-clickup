@@ -185,13 +185,13 @@ function TableGroup({
                   )}
                 />
                 <span onClick={(e) => e.stopPropagation()}>
-                  <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
+                  <StatusControl current={task.status} statuses={task.homeStatuses ?? statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
                 </span>
                 {task.milestone && <span role="img" aria-label="Milestone" className="text-xs text-cu-purple">◆</span>}
                 <span className="truncate text-[13px]">{task.name}</span>
               </Cell>
               <Cell onClick={(e) => e.stopPropagation()}>
-                <StatusControl current={task.status} statuses={statuses} variant="badge" onChange={(s) => onUpdate(task.id, { statusId: s })} />
+                <StatusControl current={task.status} statuses={task.homeStatuses ?? statuses} variant="badge" onChange={(s) => onUpdate(task.id, { statusId: s })} />
               </Cell>
               <Cell onClick={(e) => e.stopPropagation()}>
                 <AssigneeControl assignees={task.assignees.map((a) => a.user)} onChange={(ids) => onUpdate(task.id, { assigneeIds: ids })} />

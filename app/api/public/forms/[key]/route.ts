@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { setPublicAccess } from "@/lib/access-context";
 import { prisma } from "@/lib/db";
 import { ApiError, route, validateInput } from "@/lib/api-helpers";
 import { intakeFormSchema } from "@/lib/intake-schema";
@@ -18,6 +19,8 @@ const published = (key: string) => ({ shareKey: key, published: true, list: { ar
 
 export const GET = route(async (_req, { params }: Ctx) => {
   const { key } = await params;
+  if (!/^[A-Za-z0-9_-]{32}$/.test(key)) throw new ApiError(404, "Link not found");
+  setPublicAccess("form", key);
   const form = await prisma.intakeForm.findFirst({ where: published(key), select: { title: true, description: true, questions: true } });
   if (!form) throw new ApiError(404, "This form is unavailable");
   return NextResponse.json(form, { headers });
@@ -45,6 +48,8 @@ async function limitedJson(req: Request) {
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { key } = await params;
+  if (!/^[A-Za-z0-9_-]{32}$/.test(key)) throw new ApiError(404, "Link not found");
+  setPublicAccess("form", key);
   const ipLimit = rateLimit("form-submit-ip:" + clientIp(req), 20, 60_000);
   if (!ipLimit.ok) return NextResponse.json({ error: "Try again in a minute" }, {
     status: 429, headers: { ...headers, "Retry-After": String(ipLimit.retryAfter) },

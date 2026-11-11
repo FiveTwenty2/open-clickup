@@ -1,3 +1,4 @@
+import { setAccessActor } from "@/lib/access-context";
 import { createHash, randomBytes } from "node:crypto";
 import { ApiError } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
@@ -16,9 +17,9 @@ export const tokenMetadata = {
 } as const;
 
 /** Explicitly called by integration-enabled routes. Token administration still requires a browser session. */
-export async function requireIntegrationAccess(req: Request, write = false) {
+export async function requireIntegrationAccess(req: Request, write = false, allowItemGrant = false) {
   const authorization = req.headers.get("authorization");
-  if (authorization === null) return requireRole(write ? "MEMBER" : "GUEST");
+  if (authorization === null) return requireRole(write && !allowItemGrant ? "MEMBER" : "GUEST");
 
   const match = /^Bearer (ocu_[A-Za-z0-9_-]{43})$/i.exec(authorization);
   if (!match) throw new ApiError(401, "Invalid API token");
@@ -33,6 +34,7 @@ export async function requireIntegrationAccess(req: Request, write = false) {
   if (!membership || (write && (!token.writable || membership.role === "GUEST"))) {
     throw new ApiError(403, "This API token does not have the required workspace access");
   }
+  setAccessActor(token.user.id, token.workspaceId);
   return { user: token.user, workspaceId: token.workspaceId, role: membership.role };
 }
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
+import { requireWorkspaceExport } from "@/lib/resource-permissions";
 
 // GET — list templates for the current workspace
 export const GET = route(async () => {
@@ -24,26 +25,30 @@ export const POST = route(async (req) => {
   const { workspaceId } = await requireRole("MEMBER");
   const { fromTaskId, name } = await readJson(req, schema);
 
-  const task = await prisma.task.findUnique({
+  const template = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
+    await requireWorkspaceExport("task", fromTaskId, tx);
+    const task = await tx.task.findUnique({
     where: { id: fromTaskId },
     include: { checklists: { orderBy: { position: "asc" }, include: { items: { orderBy: { position: "asc" } } } } },
-  });
-  if (!task) throw new ApiError(404, "Source task not found");
+    });
+    if (!task) throw new ApiError(404, "Source task not found");
 
-  const checklists = task.checklists.map((c) => ({
-    name: c.name,
-    items: c.items.map((i) => i.name),
-  }));
+    const checklists = task.checklists.map((c) => ({
+      name: c.name,
+      items: c.items.map((i) => i.name),
+    }));
 
-  const template = await prisma.taskTemplate.create({
-    data: {
-      workspaceId,
-      name,
-      taskName: task.name,
-      description: task.description,
-      priority: task.priority,
-      checklists,
-    },
+    return tx.taskTemplate.create({
+      data: {
+        workspaceId,
+        name,
+        taskName: task.name,
+        description: task.description,
+        priority: task.priority,
+        checklists,
+      },
+    });
   });
   return NextResponse.json(template, { status: 201 });
 });

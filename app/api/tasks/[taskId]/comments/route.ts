@@ -8,6 +8,7 @@ import { ApiError, readJson, route, validateInput } from "@/lib/api-helpers";
 import { extractMentionIds } from "@/lib/mentions";
 import { MAX_COMMENT_FILES, MAX_COMMENT_FILE_MIB, MAX_COMMENT_FILE_BYTES } from "@/lib/comment-file-limits";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 const schema = z.object({ body: z.string().trim().max(50000), parentId: z.string().nullish() });
@@ -15,8 +16,9 @@ const schema = z.object({ body: z.string().trim().max(50000), parentId: z.string
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("GUEST");
   const task = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireResourcePermission("task", taskId, permissionLevels.COMMENT);
   const contentLength = Number(req.headers.get("content-length"));
   if (contentLength > MAX_COMMENT_FILE_BYTES + 1024 * 1024) throw new ApiError(413, "Comment upload is too large");
   const form = req.headers.get("content-type")?.startsWith("multipart/form-data")

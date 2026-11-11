@@ -1,56 +1,61 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { taskInclude } from "@/lib/queries";
 import { ApiError, route } from "@/lib/api-helpers";
-import { applyViewState, EMPTY_VIEW_STATE } from "@/lib/view-state";
+import { applyViewState } from "@/lib/view-state";
+import { savedViewConfig } from "@/lib/saved-view-config";
 import { isCompletedStatus } from "@/lib/task-status";
+import { getPublicScopedViewTasks, getViewDependencies } from "@/lib/scoped-views";
+import { setPublicAccess } from "@/lib/access-context";
+import { visibleSecondaryTaskIdsForLists } from "@/lib/task-placements";
 
 type Context = { params: Promise<{ key: string }> };
-const configSchema = z.object({
-  filters: z.object({
-    priorities: z.array(z.enum(["URGENT", "HIGH", "NORMAL", "LOW"])).default([]),
-    assignees: z.array(z.string()).default([]),
-    tags: z.array(z.string()).default([]),
-    completion: z.enum(["open", "closed", "all"]).optional(),
-    due: z.enum(["overdue", "week", "none", "all"]).optional(),
-    assignment: z.enum(["unassigned", "all"]).optional(),
-    recurrence: z.enum(["recurring", "all"]).optional(),
-  }).default(EMPTY_VIEW_STATE.filters),
-  sort: z.object({ field: z.enum(["priority", "dueDate", "name", "created"]).nullable(), dir: z.enum(["asc", "desc"]) }).default(EMPTY_VIEW_STATE.sort),
-  groupBy: z.enum(["none", "status", "priority", "assignee"]).default("status"),
-  subtasks: z.enum(["collapsed", "expanded", "separate"]).optional(),
-  statusIds: z.array(z.string()).optional(),
-  hideClosedSubtasks: z.boolean().optional(),
-});
 
 export const GET = route(async (_req, { params }: Context) => {
   const { key } = await params;
   if (!/^[A-Za-z0-9_-]{32}$/.test(key)) throw new ApiError(404, "Shared view not found");
-  const where = { key, view: { privateOwnerId: null, type: { in: ["LIST", "TABLE"] as ("LIST" | "TABLE")[] }, list: { archivedAt: null } } };
+  setPublicAccess("view", key);
+  const listWhere = { key, view: { privateOwnerId: null, list: { archivedAt: null } } };
+  const scopedWhere = { key, view: { privateOwnerId: null } };
   const link = await prisma.viewPublicLink.findFirst({
-    where, select: { view: { select: { name: true, config: true, listId: true } } },
+    where: listWhere, select: { view: { select: { name: true, config: true, listId: true, type: true } } },
   });
-  if (!link) throw new ApiError(404, "Shared view not found");
-  const config = configSchema.safeParse(link.view.config ?? {});
+  const scoped = link ? null : await prisma.scopedViewPublicLink.findFirst({
+    where: scopedWhere,
+    select: { view: { select: { name: true, config: true, workspaceId: true, spaceId: true, folderId: true, type: true } } },
+  });
+  const view = link?.view ?? scoped?.view;
+  if (!view) throw new ApiError(404, "Shared view not found");
+  const config = savedViewConfig.safeParse(view.config ?? {});
   if (!config.success) throw new ApiError(404, "Shared view is unavailable");
   const state = config.data;
-  const rows = await prisma.task.findMany({
-    where: {
-      listId: link.view.listId, deletedAt: null, archived: false,
-      list: { archivedAt: null },
-      ...(state.subtasks !== "separate" && { parentId: null }),
-    },
+  const secondaryIds = link && view.type !== "EMBED"
+    ? await visibleSecondaryTaskIdsForLists(prisma, [link.view.listId], { publicView: true }) : [];
+  const rows = view.type === "EMBED" ? [] : link ? await prisma.task.findMany({
+    where: { deletedAt: null, archived: false,
+      OR: [{ listId: link.view.listId }, { id: { in: secondaryIds } }] },
     orderBy: [{ position: "asc" }, { id: "asc" }], include: taskInclude,
-  });
-  const tasks = applyViewState(rows, state)
-    .filter((task) => !state.hideClosedSubtasks || !task.parentId || !isCompletedStatus(task.status.type))
-    .map(({ id, name, priority, milestone, startDate, dueDate, status }) => ({
-      id, name, priority, milestone, startDate, dueDate, status: { name: status.name, color: status.color },
+  }) : await getPublicScopedViewTasks(scoped!.view);
+  const includeChildren = state.subtasks ? state.subtasks !== "collapsed" : view.type === "MIND_MAP" || view.type === "CALENDAR";
+  const visible = applyViewState(rows.filter((row) => includeChildren || !row.parentId), state)
+    .filter((task) => !state.hideClosedSubtasks || !task.parentId || !isCompletedStatus(task.status.type));
+  const visibleIds = new Set(visible.map(({ id }) => id));
+  const tasks = visible
+    .map(({ id, parentId, name, priority, milestone, startDate, dueDate, status, mapLatitude, mapLongitude, assignees }) => ({
+      id, parentId: parentId && visibleIds.has(parentId) ? parentId : null,
+      name, priority, milestone, startDate, dueDate, status: { name: status.name, color: status.color, type: status.type },
+      ...(view.type === "MAP" && { mapLatitude, mapLongitude }),
+      ...((view.type === "TEAM" || state.groupBy === "assignee") && { assigned: assignees.length > 0 }),
     }));
-  // Check again after loading task data so a link revoked while this request was running stops serving it.
-  if (!await prisma.viewPublicLink.findFirst({ where, select: { viewId: true } })) throw new ApiError(404, "Shared view not found");
-  return NextResponse.json({ name: link.view.name, tasks }, {
+  const active = link
+    ? await prisma.viewPublicLink.findFirst({ where: listWhere, select: { viewId: true } })
+    : await prisma.scopedViewPublicLink.findFirst({ where: scopedWhere, select: { viewId: true } });
+  if (!active) throw new ApiError(404, "Shared view not found");
+  const dependencies = view.type === "GANTT" ? await getViewDependencies(tasks.map(({ id }) => id)) : undefined;
+  return NextResponse.json({ name: view.name, type: view.type, tasks, dependencies, groupBy: state.groupBy,
+    ...(view.type === "EMBED" && { embedUrl: state.embedUrl }),
+    ...(view.type === "MIND_MAP" && { mindMap: state.mindMap }),
+  }, {
     headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow" },
   });
 });

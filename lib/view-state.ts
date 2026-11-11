@@ -21,6 +21,8 @@ export type ViewState = {
   subtasks?: "collapsed" | "expanded" | "separate";
   hideClosedSubtasks?: boolean;
   statusIds?: string[];
+  embedUrl?: string | null;
+  mindMap?: { mode: "tasks" | "freeform"; nodes: { id: string; parentId: string | null; label: string }[] };
 };
 
 export const EMPTY_VIEW_STATE: ViewState = {
@@ -41,10 +43,10 @@ export function countActiveFilters(vs: ViewState): number {
   );
 }
 
-export function applyViewState(
-  tasks: TaskWithRelations[],
+export function applyViewState<T extends TaskWithRelations>(
+  tasks: T[],
   vs: ViewState,
-): TaskWithRelations[] {
+): T[] {
   let out = tasks;
   const { priorities, assignees, tags, completion } = vs.filters;
 

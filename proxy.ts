@@ -5,6 +5,13 @@ import type { NextRequest } from "next/server";
 // API routes validate the session for real). Excludes /api, static assets, /login.
 // (Next renamed the "middleware" file convention to "proxy".)
 export function proxy(req: NextRequest) {
+  const upload = /^\/uploads\/([^/]+)$/.exec(req.nextUrl.pathname);
+  if (upload) {
+    const destination = req.nextUrl.clone();
+    destination.pathname = "/api/legacy-uploads/" + upload[1];
+    return NextResponse.rewrite(destination);
+  }
+  if (req.nextUrl.pathname.startsWith("/uploads/")) return new NextResponse(null, { status: 404 });
   const hasSession = req.cookies.has("cu_session");
   const { pathname } = req.nextUrl;
 

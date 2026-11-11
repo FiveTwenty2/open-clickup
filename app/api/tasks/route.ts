@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createTask } from "@/lib/tasks";
 import { requireIntegrationAccess, requireListInWorkspace, requireWorkspaceUsers, requireWorkspaceTaskType } from "@/lib/integration-access";
 import { readJson, route } from "@/lib/api-helpers";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 const schema = z.object({
   listId: z.string().min(1),
@@ -18,8 +19,9 @@ const schema = z.object({
 
 export const POST = route(async (req) => {
   const body = await readJson(req, schema);
-  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const { user, workspaceId } = await requireIntegrationAccess(req, true, true);
   await requireListInWorkspace(body.listId, workspaceId);
+  await requireResourcePermission(body.parentId ? "task" : "list", body.parentId ?? body.listId, permissionLevels.EDIT);
   await requireWorkspaceTaskType(workspaceId, body.taskTypeId);
   await requireWorkspaceUsers(workspaceId, body.assigneeIds ?? []);
   const task = await createTask({

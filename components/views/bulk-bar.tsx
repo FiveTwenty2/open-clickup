@@ -45,7 +45,7 @@ export function BulkBar({
         </span>
         <span className="mx-1 h-5 w-px bg-white/20" />
 
-        <BarMenu label="Status">
+        <BarMenu label="Status" disabled={!statuses.length}>
           {statuses.map((s) => (
             <Item key={s.id} onSelect={() => onSetStatus(s.id)}>
               <StatusCircle status={s} size={14} />
@@ -98,11 +98,11 @@ export function BulkBar({
   );
 }
 
-function BarMenu({ label, children }: { label: string; children: React.ReactNode }) {
+function BarMenu({ label, children, disabled }: { label: string; children: React.ReactNode; disabled?: boolean }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-white/10">
+        <button disabled={disabled} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-white/10 disabled:opacity-50">
           {label === "Priority" ? <Flag className="h-4 w-4" /> : null}
           {label}
         </button>

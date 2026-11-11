@@ -107,7 +107,8 @@ test("creates a folder, moves a list, and creates a new list from an updated tem
 
   const move = page.waitForResponse((response) => response.url().endsWith("/api/hierarchy/reorder") && response.ok());
   await sidebar.getByLabel(`Drag list ${name}`).dragTo(folder);
-  await move;
+  const movedRequest = (await move).request().postDataJSON();
+  expect(movedRequest).toMatchObject({ source: { id: source.id }, target: { kind: "folder" }, placement: "inside" });
   const moved = await (await page.request.get(`/api/lists/${source.id}`)).json();
   expect(moved.list.folder.name).toBe(folderName);
   await folder.click();

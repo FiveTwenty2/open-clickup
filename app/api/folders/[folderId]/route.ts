@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
 import { publish } from "@/lib/events";
 import { readJson, route } from "@/lib/api-helpers";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ folderId: string }> };
 const schema = z.object({
@@ -13,7 +14,8 @@ const schema = z.object({
 
 export const PATCH = route(async (req, { params }: Ctx) => {
   const { folderId } = await params;
-  const { workspaceId } = await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("GUEST");
+  await requireResourcePermission("folder", folderId, permissionLevels.EDIT);
   const data = await readJson(req, schema);
   const folder = await prisma.folder.update({ where: { id: folderId, space: { workspaceId } }, data });
   publish({ type: "bootstrap" });
@@ -22,7 +24,8 @@ export const PATCH = route(async (req, { params }: Ctx) => {
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { folderId } = await params;
-  const { workspaceId } = await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("GUEST");
+  await requireResourcePermission("folder", folderId, permissionLevels.FULL);
   await prisma.folder.delete({ where: { id: folderId, space: { workspaceId } } });
   publish({ type: "bootstrap" });
   return NextResponse.json({ ok: true });

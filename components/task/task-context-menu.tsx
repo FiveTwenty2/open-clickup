@@ -10,12 +10,13 @@ import { PRIORITY_CONFIG, PRIORITY_ORDER } from "@/lib/constants";
 import type { StatusModel, TaskWithRelations } from "@/lib/queries";
 import { isCompletedStatus, quickStatus } from "@/lib/task-status";
 import { StatusCircle } from "@/components/menus/status-control";
+import { openItemSharing } from "@/components/sharing/item-sharing";
 
 const panel = "z-[60] min-w-44 rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg";
 const item = "flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover data-[disabled]:opacity-50";
 
 export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: {
-  task: Pick<TaskWithRelations, "id" | "listId" | "name" | "priority" | "archived"> & { milestone?: boolean; status: Pick<StatusModel, "id" | "type"> };
+  task: Pick<TaskWithRelations, "id" | "listId" | "name" | "priority" | "archived" | "homeStatuses"> & { milestone?: boolean; status: Pick<StatusModel, "id" | "type"> };
   statuses?: StatusModel[];
   onOpen: () => void;
   onRename?: () => void;
@@ -29,9 +30,9 @@ export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: 
   const query = useQuery({
     queryKey: ["task-menu-statuses", task.listId],
     queryFn: () => apiGet<StatusModel[]>(`/api/lists/${task.listId}/statuses`),
-    enabled: open && !statuses,
+    enabled: open && !statuses && !task.homeStatuses,
   });
-  const choices = statuses ?? query.data ?? [];
+  const choices = task.homeStatuses ?? statuses ?? query.data ?? [];
   const target = quickStatus<Pick<StatusModel, "id" | "type">>(task.status, choices);
   const { currentUser, workspace } = useWorkspace();
   const canWrite = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
@@ -62,6 +63,7 @@ export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: 
       <ContextMenu.Portal>
         <ContextMenu.Content className={panel} onClick={(event) => event.stopPropagation()}>
           <ContextMenu.Item className={item} onSelect={onOpen}>Open task</ContextMenu.Item>
+          <ContextMenu.Item className={item} onSelect={() => openItemSharing("task", task.id, task.name)}>Sharing & permissions</ContextMenu.Item>
           {canWrite && <>{onRename && <ContextMenu.Item className={item} onSelect={onRename}>Rename</ContextMenu.Item>}
           {target && (
             <ContextMenu.Item className={item} onSelect={() => change({ statusId: target.id })}>

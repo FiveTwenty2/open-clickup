@@ -13,6 +13,14 @@ export type TaskGroup = {
   tasks: TaskWithRelations[];
 };
 
+export function availableGroupStatuses(statuses: StatusModel[], tasks: TaskWithRelations[]) {
+  const grouped = new Map(statuses.map((status) => [status.id, status]));
+  for (const task of tasks) {
+    if (!grouped.has(task.statusId)) grouped.set(task.statusId, task.status);
+  }
+  return [...grouped.values()];
+}
+
 export function groupTasks(
   tasks: TaskWithRelations[],
   groupBy: GroupBy,
@@ -60,7 +68,7 @@ export function groupTasks(
 
     case "status":
     default:
-      return ctx.statuses.map((s) => ({
+      return availableGroupStatuses(ctx.statuses, tasks).map((s) => ({
         id: s.id,
         label: s.name,
         color: s.color,

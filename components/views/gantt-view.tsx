@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   eachDayOfInterval,
   differenceInCalendarDays,
@@ -27,10 +27,15 @@ function noonISO(d: Date): string {
 const DAY_W = 34;
 const NAME_W = 260;
 const ROW_H = 39; // timeline cell (38) + row border (1)
+const WINDOW_DAYS = 42;
 
 type Geo = { cy: number; left: number; right: number; visible: boolean };
+type GanttTask = Pick<TaskWithRelations, "id" | "name" | "startDate" | "dueDate" | "milestone"> & {
+  status: Pick<TaskWithRelations["status"], "color" | "type">;
+  assignees?: TaskWithRelations["assignees"];
+};
 
-function barGeometry(task: TaskWithRelations, start: Date, rowIndex: number): Geo {
+function barGeometry(task: GanttTask, start: Date, rowIndex: number, days: number): Geo {
   const s = task.startDate
     ? startOfDay(new Date(task.startDate))
     : task.dueDate
@@ -41,9 +46,9 @@ function barGeometry(task: TaskWithRelations, start: Date, rowIndex: number): Ge
   const span = s && e ? differenceInCalendarDays(e, s) + 1 : 0;
   return {
     cy: rowIndex * ROW_H + ROW_H / 2,
-    left: offset * DAY_W + 3,
-    right: offset * DAY_W + span * DAY_W - 3,
-    visible: span > 0,
+    left: Math.max(0, offset) * DAY_W + 3,
+    right: Math.min(days, offset + span) * DAY_W - 3,
+    visible: span > 0 && offset < days && offset + span > 0,
   };
 }
 
@@ -54,10 +59,23 @@ export function GanttView({
   data: ListData;
   onOpenTask: (id: string) => void;
 }) {
-  const tasks = data.tasks;
-  const dependencies = data.dependencies;
   const update = useUpdateTask(data.list.id);
-  const reschedule = (taskId: string, patch: TaskPatch) => update.mutate({ taskId, patch });
+  const taskById = new Map(data.tasks.map((task) => [task.id, task]));
+  return <GanttChart tasks={data.tasks} dependencies={data.dependencies} onOpenTask={onOpenTask}
+    onReschedule={(taskId, patch) => update.mutate({ taskId, patch })}
+    wrapRow={(task, row) => <TaskContextMenu task={taskById.get(task.id)!} statuses={data.list.statuses}
+      onOpen={() => onOpenTask(task.id)}><div>{row}</div></TaskContextMenu>} />;
+}
+
+export function GanttChart({ tasks, dependencies, onOpenTask, onReschedule, wrapRow }: {
+  tasks: GanttTask[];
+  dependencies: Pick<ListData["dependencies"][number], "id" | "blockerId" | "blockedId">[];
+  onOpenTask?: (id: string) => void;
+  onReschedule?: (id: string, patch: TaskPatch) => void;
+  wrapRow?: (task: GanttTask, row: ReactNode) => ReactNode;
+}) {
+  const arrowId = useId();
+  const [cursor, setCursor] = useState<Date | null>(null);
 
   const { start, days } = useMemo(() => {
     const dates: Date[] = [];
@@ -66,19 +84,26 @@ export function GanttView({
       if (t.dueDate) dates.push(new Date(t.dueDate));
     }
     const today = startOfDay(new Date());
-    let min = dates.length ? new Date(Math.min(...dates.map((d) => +d))) : today;
-    let max = dates.length ? new Date(Math.max(...dates.map((d) => +d))) : addDays(today, 14);
+    let min = today;
+    let max = dates.length ? today : addDays(today, 14);
+    for (const date of dates) {
+      if (date < min) min = date;
+      if (date > max) max = date;
+    }
     min = startOfDay(addDays(min < today ? min : today, -3));
     max = startOfDay(addDays(max > today ? max : today, 7));
-    return { start: min, days: eachDayOfInterval({ start: min, end: max }) };
-  }, [tasks]);
+    const broad = differenceInCalendarDays(max, min) >= WINDOW_DAYS;
+    const start = cursor ?? (broad ? addDays(today, -3) : min);
+    const end = cursor || broad ? addDays(start, WINDOW_DAYS - 1) : max;
+    return { start, days: eachDayOfInterval({ start, end }) };
+  }, [tasks, cursor]);
 
   // bar geometry per task (for drawing dependency arrows)
   const geo = useMemo(() => {
     const map = new Map<string, Geo>();
-    tasks.forEach((t, i) => map.set(t.id, barGeometry(t, start, i)));
+    tasks.forEach((t, i) => map.set(t.id, barGeometry(t, start, i, days.length)));
     return map;
-  }, [tasks, start]);
+  }, [tasks, start, days.length]);
 
   const arrows = useMemo(() => {
     return dependencies
@@ -104,7 +129,19 @@ export function GanttView({
   }, [days]);
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div role="region" aria-label="Gantt chart" className="flex-1 overflow-auto">
+      <div className="sticky left-0 flex flex-wrap items-center gap-2 p-2 text-xs">
+        <button className="rounded border border-cu-border px-2 py-1 hover:bg-cu-hover"
+          onClick={() => setCursor(addDays(start, -WINDOW_DAYS))}>Previous period</button>
+        <button className="rounded border border-cu-border px-2 py-1 hover:bg-cu-hover"
+          onClick={() => setCursor(addDays(start, WINDOW_DAYS))}>Next period</button>
+        <button className="rounded border border-cu-border px-2 py-1 hover:bg-cu-hover"
+          onClick={() => setCursor(startOfDay(new Date()))}>Today</button>
+        <input type="date" aria-label="Go to Gantt date" className="rounded border border-cu-border bg-cu-panel px-2 py-1"
+          value={format(start, "yyyy-MM-dd")} onChange={(event) => {
+            if (event.target.value) setCursor(startOfDay(new Date(event.target.value + "T12:00:00")));
+          }} />
+      </div>
       <div className="inline-block min-w-full">
         {/* header */}
         <div className="sticky top-0 z-20 flex bg-cu-bg">
@@ -152,25 +189,25 @@ export function GanttView({
 
         {/* rows */}
         <div className="relative">
-          {tasks.map((task) => (
-            <TaskContextMenu key={task.id} task={task} statuses={data.list.statuses} onOpen={() => onOpenTask(task.id)}><div>
-            <GanttRow
+          {tasks.map((task) => {
+            const row = <GanttRow
               task={task}
               start={start}
               days={days}
               onOpenTask={onOpenTask}
-              onReschedule={reschedule}
-            />
-            </div></TaskContextMenu>
-          ))}
+              onReschedule={onReschedule}
+            />;
+            return <div key={task.id}>{wrapRow ? wrapRow(task, row) : row}</div>;
+          })}
           {arrows.length > 0 && (
             <svg
+              role="img" aria-label="Task dependencies"
               className="pointer-events-none absolute top-0 z-[5] overflow-visible"
               style={{ left: NAME_W, width: days.length * DAY_W, height: tasks.length * ROW_H }}
             >
               <defs>
                 <marker
-                  id="gantt-arrowhead"
+                  id={arrowId}
                   markerWidth="6"
                   markerHeight="6"
                   refX="5"
@@ -190,7 +227,7 @@ export function GanttView({
                     fill="none"
                     stroke="#9aa1ad"
                     strokeWidth={1.5}
-                    markerEnd="url(#gantt-arrowhead)"
+                    markerEnd={`url(#${arrowId})`}
                   />
                 );
               })}
@@ -211,11 +248,11 @@ function GanttRow({
   onOpenTask,
   onReschedule,
 }: {
-  task: TaskWithRelations;
+  task: GanttTask;
   start: Date;
   days: Date[];
-  onOpenTask: (id: string) => void;
-  onReschedule: (taskId: string, patch: TaskPatch) => void;
+  onOpenTask?: (id: string) => void;
+  onReschedule?: (taskId: string, patch: TaskPatch) => void;
 }) {
   const s = task.startDate ? startOfDay(new Date(task.startDate)) : task.dueDate ? startOfDay(new Date(task.dueDate)) : null;
   const e = task.dueDate ? startOfDay(new Date(task.dueDate)) : s;
@@ -239,7 +276,7 @@ function GanttRow({
   }
 
   function beginDrag(mode: DragMode, ev: React.PointerEvent) {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || !onReschedule) return;
     if (!s || !e) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -278,9 +315,11 @@ function GanttRow({
       const newStart = addDays(s, dd);
       patch.startDate = noonISO(newStart > e ? e : newStart);
     }
-    onReschedule(task.id, patch);
+    onReschedule?.(task.id, patch);
   }
 
+  const clippedStart = Math.max(0, offset);
+  const clippedSpan = Math.min(days.length, offset + span) - clippedStart;
   return (
     <div className="flex border-b border-cu-border/60 hover:bg-cu-hover/40">
       <div
@@ -288,9 +327,9 @@ function GanttRow({
         style={{ width: NAME_W }}
       >
         {task.milestone ? <span aria-label="Milestone" role="img" className="text-sm text-cu-purple">◆</span> : <StatusCircle status={task.status} size={14} />}
-        <button onClick={() => onOpenTask(task.id)} className="truncate text-left text-[13px] hover:text-cu-purple">
+        {onOpenTask ? <button onClick={() => onOpenTask(task.id)} className="truncate text-left text-[13px] hover:text-cu-purple">
           {task.name}
-        </button>
+        </button> : <span className="truncate text-[13px]">{task.name}</span>}
       </div>
       <div className="relative" style={{ width: days.length * DAY_W, height: 38 }}>
         {/* weekend shading */}
@@ -303,39 +342,39 @@ function GanttRow({
             />
           ))}
         </div>
-        {span > 0 && (
+        {span > 0 && clippedSpan > 0 && (
           <div
             className={cn(
               "group/bar absolute top-1/2 flex h-5 -translate-y-1/2 cursor-grab items-center gap-1 rounded-full px-2 text-[11px] font-medium text-white shadow-sm hover:brightness-95 active:cursor-grabbing",
               drag && "z-10 ring-2 ring-white/60",
             )}
             style={{
-              left: offset * DAY_W + 3,
-              width: span * DAY_W - 6,
+              left: clippedStart * DAY_W + 3,
+              width: clippedSpan * DAY_W - 6,
               backgroundColor: task.status.color,
             }}
             onPointerDown={(ev) => beginDrag("move", ev)}
             onClick={() => {
               if (suppressClick.current) return;
-              onOpenTask(task.id);
+              onOpenTask?.(task.id);
             }}
           >
             {/* left resize handle */}
-            <span
+            {onReschedule && offset >= 0 && <span
               onPointerDown={(ev) => beginDrag("resize-start", ev)}
               className="absolute left-0 top-0 h-full w-2 cursor-ew-resize rounded-l-full opacity-0 group-hover/bar:opacity-100"
-            />
+            />}
             <span className="truncate">{task.name}</span>
-            {task.assignees.length > 0 && (
+            {!!task.assignees?.length && (
               <span className="ml-auto shrink-0">
                 <AvatarStack users={task.assignees.map((a) => a.user)} size="xs" max={2} />
               </span>
             )}
             {/* right resize handle */}
-            <span
+            {onReschedule && offset + span <= days.length && <span
               onPointerDown={(ev) => beginDrag("resize-end", ev)}
               className="absolute right-0 top-0 h-full w-2 cursor-ew-resize rounded-r-full opacity-0 group-hover/bar:opacity-100"
-            />
+            />}
           </div>
         )}
       </div>

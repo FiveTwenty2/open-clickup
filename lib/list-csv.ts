@@ -4,6 +4,7 @@ import { ApiError } from "@/lib/api-helpers";
 import { encodeCsv, parseCsv } from "@/lib/csv";
 import { isCompletedStatus } from "@/lib/task-status";
 import { publish } from "@/lib/events";
+import { createTaskTree } from "@/lib/create-task-tree";
 import type { Priority } from "@/lib/generated/prisma/client";
 
 const headers = ["Task ID", "Parent Task ID", "Task Name", "Status", "Priority", "Assignees", "Start Date", "Due Date", "Description"];
@@ -111,12 +112,10 @@ export async function importListCsv(workspaceId: string, listId: string, userId:
   await prisma.$transaction(async (tx) => {
     const last = await tx.task.aggregate({ where: { listId }, _max: { position: true } });
     const base = last._max.position ?? 0;
-    await tx.task.createMany({
-      data: tasks.map(({ id, name, statusId, completedAt, priority, startDate, dueDate, description, parentSource }, index) => ({
+    await createTaskTree(tx, tasks.map(({ id, name, statusId, completedAt, priority, startDate, dueDate, description, parentSource }, index) => ({
         id, listId, name, statusId, completedAt, priority, startDate, dueDate, description, createdById: userId,
         position: base + (index + 1) * 1000, parentId: parentSource ? seen.get(parentSource) : null,
-      })),
-    });
+    })));
     const assignees = tasks.flatMap((task) => task.assigneeIds.map((assigneeId) => ({ taskId: task.id, userId: assigneeId })));
     if (assignees.length) await tx.taskAssignee.createMany({ data: assignees });
     await tx.activity.createMany({ data: tasks.map((task) => ({ taskId: task.id, userId, type: "created", data: { source: "csv" } })) });

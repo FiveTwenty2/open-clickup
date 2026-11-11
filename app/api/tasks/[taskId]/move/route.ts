@@ -6,22 +6,27 @@ import { requireTaskInWorkspace, requireListInWorkspace } from "@/lib/integratio
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 import { isCompletedStatus } from "@/lib/task-status";
+import { permissionLevels, requireResourceMove, requireTaskBranchPermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 const schema = z.object({ listId: z.string().min(1) });
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("GUEST");
   const { listId: targetListId } = await readJson(req, schema);
   const source = await requireTaskInWorkspace(taskId, workspaceId);
   await requireListInWorkspace(targetListId, workspaceId);
   if (source.listId === targetListId) return NextResponse.json({ ok: true, listId: targetListId });
 
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
     const task = await tx.task.findUnique({ where: { id: taskId, deletedAt: null }, select: { parentId: true, listId: true } });
     if (!task || task.listId !== source.listId) throw new ApiError(409, "This task changed lists. Try again.");
     if (task.parentId) throw new ApiError(400, "Move the parent task instead of a subtask");
+    await requireTaskBranchPermission(taskId, permissionLevels.EDIT, tx);
+    await requireResourceMove("task", taskId, "list", targetListId, tx);
     const target = await tx.list.findUniqueOrThrow({ where: { id: targetListId }, include: { statuses: { orderBy: { position: "asc" } } } });
     if (!target.statuses.length) throw new ApiError(400, "Target list has no statuses");
     const last = await tx.task.aggregate({ where: { listId: targetListId, parentId: null }, _max: { position: true } });
@@ -47,7 +52,8 @@ export const POST = route(async (req, { params }: Ctx) => {
       group.ids.push(entry.id);
       byStatus.set(status.id, group);
     }
-    await tx.customFieldValue.deleteMany({ where: { taskId: { in: ids } } });
+    await tx.taskListMembership.deleteMany({ where: { listId: targetListId, taskId: { in: ids } } });
+    await tx.customFieldValue.deleteMany({ where: { taskId: { in: ids }, field: { listId: source.listId } } });
     await tx.taskTag.deleteMany({ where: { taskId: { in: ids }, tag: { spaceId: { not: target.spaceId } } } });
     for (const [statusId, group] of byStatus) {
       await tx.task.updateMany({

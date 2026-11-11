@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireIntegrationAccess } from "@/lib/integration-access";
 import { route } from "@/lib/api-helpers";
+import { visibleSecondaryTaskIds } from "@/lib/task-placements";
 
 export const GET = route(async (req) => {
   const { workspaceId } = await requireIntegrationAccess(req);
   const listId = new URL(req.url).searchParams.get("list");
+  const secondaryIds = listId ? await visibleSecondaryTaskIds(prisma, listId) : [];
   const tasks = await prisma.task.findMany({
-    where: { archived: false, deletedAt: null, list: { archivedAt: null, space: { workspaceId } }, ...(listId && { listId }) },
+    where: { archived: false, deletedAt: null, list: { archivedAt: null, space: { workspaceId } }, ...(listId && { OR: [{ listId }, { id: { in: secondaryIds } }] }) },
     select: {
       id: true, name: true, listId: true, parentId: true, priority: true, archived: true, milestone: true, startDate: true, dueDate: true,
       status: { select: { id: true, name: true, color: true, type: true } },

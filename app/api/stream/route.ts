@@ -1,4 +1,7 @@
 import { subscribe } from "@/lib/events";
+import { setAccessActor, withAccessContext } from "@/lib/access-context";
+import { getMembership } from "@/lib/permissions";
+import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +11,8 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
+  const membership = await getMembership(user.id);
+  if (!membership) return new Response("Unauthorized", { status: 401 });
 
   const encoder = new TextEncoder();
   let unsubscribe: (() => void) | null = null;
@@ -26,6 +31,16 @@ export async function GET() {
       unsubscribe = subscribe((event) => {
         if ("userIds" in event) {
           if (event.userIds.includes(user.id)) send(`data: ${JSON.stringify({ type: event.type })}\n\n`);
+          return;
+        }
+        if (event.type === "list") {
+          void withAccessContext(async () => {
+            setAccessActor(user.id, membership.workspaceId);
+            const visible = await prisma.list.findFirst({
+              where: { id: event.listId, space: { workspaceId: membership.workspaceId } }, select: { id: true },
+            });
+            if (visible) send(`data: ${JSON.stringify(event)}\n\n`);
+          }).catch(() => {});
           return;
         }
         send(`data: ${JSON.stringify(event)}\n\n`);

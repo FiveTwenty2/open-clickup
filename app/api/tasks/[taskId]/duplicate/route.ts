@@ -5,24 +5,27 @@ import { taskInclude } from "@/lib/queries";
 import { ApiError, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 import { requireTaskInWorkspace } from "@/lib/integration-access";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 
 export const POST = route(async (_req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
-  await requireTaskInWorkspace(taskId, workspaceId);
+  const { user, workspaceId } = await requireRole("GUEST");
+  const { listId } = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireResourcePermission("task", taskId, permissionLevels.EDIT);
 
   const src = await prisma.task.findUnique({
     where: { id: taskId },
     include: {
       assignees: true,
       tags: true,
-      customFieldValues: true,
+      customFieldValues: { where: { field: { listId } } },
       checklists: { orderBy: { position: "asc" }, include: { items: { orderBy: { position: "asc" } } } },
     },
   });
   if (!src) throw new ApiError(404, "Task not found");
+  await requireResourcePermission(src.parentId ? "task" : "list", src.parentId ?? src.listId, permissionLevels.EDIT);
 
   const last = await prisma.task.findFirst({
     where: { listId: src.listId, parentId: src.parentId },
@@ -34,6 +37,8 @@ export const POST = route(async (_req, { params }: Ctx) => {
       listId: src.listId,
       statusId: src.statusId,
       parentId: src.parentId,
+      private: src.private,
+      privacyOwnerId: src.private ? user.id : null,
       name: `${src.name} (copy)`,
       description: src.description,
       priority: src.priority,

@@ -10,7 +10,7 @@ import { useEffect } from "react";
 import { apiGet, apiSend } from "@/lib/api";
 import type { ListData, TaskWithRelations, UserLite, WorkspaceTree } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
-import { isCompletedStatus } from "@/lib/task-status";
+import { equivalentStatus, isCompletedStatus, sameStatusDefinition } from "@/lib/task-status";
 
 export type Bootstrap = { currentUser: UserLite; workspace: WorkspaceTree; favorites: string[] };
 
@@ -51,10 +51,17 @@ export function useRealtime() {
       try {
         const event = JSON.parse(e.data) as { type: string; listId?: string };
         if (event.type === "list" && event.listId) {
-          qc.invalidateQueries({ queryKey: ["list", event.listId] });
+          qc.invalidateQueries({ queryKey: ["list"], predicate: ({ queryKey, state }) => {
+            if (queryKey[1] === event.listId) return true;
+            const data = state.data as ListData | undefined;
+            return data?.allTasks.some((task) => task.listId === event.listId) ?? false;
+          } });
           qc.invalidateQueries({ queryKey: ["task-menu-statuses", event.listId] });
+          qc.invalidateQueries({ queryKey: ["status-workflow", `list/${event.listId}`] });
+          qc.invalidateQueries({ queryKey: ["scoped-views"] });
           qc.invalidateQueries({ queryKey: ["task"] });
           qc.invalidateQueries({ queryKey: ["relationships"] });
+          qc.invalidateQueries({ queryKey: ["task-list-memberships"] });
           qc.invalidateQueries({ queryKey: ["my-tasks"] });
           qc.invalidateQueries({ queryKey: ["recovery"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -66,11 +73,23 @@ export function useRealtime() {
         } else if (event.type === "messages") {
           qc.invalidateQueries({ queryKey: ["messages"] });
         } else if (event.type === "bootstrap") {
+          qc.invalidateQueries({ queryKey: ["scoped-views"] });
+          qc.invalidateQueries({ queryKey: ["status-workflow"] });
           qc.invalidateQueries({ queryKey: ["bootstrap"] });
           qc.invalidateQueries({ queryKey: ["task-types"] });
           qc.invalidateQueries({ queryKey: ["list"] });
           qc.invalidateQueries({ queryKey: ["task"] });
           qc.invalidateQueries({ queryKey: ["archived-lists"] });
+          qc.invalidateQueries({ queryKey: ["relationships"] });
+          qc.invalidateQueries({ queryKey: ["task-list-memberships"] });
+          qc.invalidateQueries({ queryKey: ["my-tasks"] });
+          qc.invalidateQueries({ queryKey: ["recovery"] });
+          qc.invalidateQueries({ queryKey: ["dashboard"] });
+          qc.invalidateQueries({ queryKey: ["workspace-calendar"] });
+          qc.invalidateQueries({ queryKey: ["workload"] });
+          qc.invalidateQueries({ queryKey: ["workspace-tasks"] });
+          qc.invalidateQueries({ queryKey: ["goals"] });
+          qc.invalidateQueries({ queryKey: ["audit"] });
         } else if (event.type === "docs") {
           qc.invalidateQueries({ queryKey: ["documents"] });
           qc.invalidateQueries({ queryKey: ["document"] });
@@ -265,25 +284,33 @@ export function useUpdateTask(listId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ taskId, patch }: { taskId: string; patch: TaskPatch }) =>
-      apiSend<TaskWithRelations>(`/api/tasks/${taskId}`, "PATCH", patch),
+      apiSend<TaskWithRelations>(`/api/tasks/${taskId}`, "PATCH", {
+        ...patch, ...(listId && patch.position !== undefined && { placementListId: listId }),
+      }),
     onMutate: async ({ taskId, patch }) => {
       if (!listId) return;
       await qc.cancelQueries({ queryKey: ["list", listId] });
       const prev = qc.getQueryData<ListData>(["list", listId]);
       if (prev) {
-        const status = prev.list.statuses.find((item) => item.id === patch.statusId);
+        const homeStatuses = prev.allTasks.find((task) => task.id === taskId)?.homeStatuses ?? prev.list.statuses;
+        const destination = prev.list.statuses.find((status) => status.id === patch.statusId);
+        const status = homeStatuses.find((item) => item.id === patch.statusId) ?? (destination && equivalentStatus(homeStatuses, destination));
+        const groupStatusId = status && (prev.list.statuses.find((candidate) => sameStatusDefinition(candidate, status))?.id ?? status.id);
+        const update = (task: TaskWithRelations) => {
+          const next = applyOptimistic(task, patch);
+          return status ? {
+            ...next, status, statusId: groupStatusId ?? status.id,
+            completedAt: isCompletedStatus(status.type) ? task.completedAt ?? new Date() : null,
+          } : { ...next, statusId: task.statusId };
+        };
         qc.setQueryData<ListData>(["list", listId], {
           ...prev,
           allTasks: prev.allTasks.map((task) => {
             if (task.id !== taskId) return task;
-            const next = applyOptimistic(task, patch);
-            return status ? { ...next, status, completedAt: isCompletedStatus(status.type) ? task.completedAt ?? new Date() : null } : next;
+            return update(task);
           }),
           tasks: prev.tasks.map((task) => {
-            if (task.id === taskId) {
-              const next = applyOptimistic(task, patch);
-              return status ? { ...next, status, completedAt: isCompletedStatus(status.type) ? task.completedAt ?? new Date() : null } : next;
-            }
+            if (task.id === taskId) return update(task);
             if (!status || !task.subtasks.some((subtask) => subtask.id === taskId)) return task;
             return {
               ...task,
@@ -343,7 +370,7 @@ export function useBulk(listId: string | undefined) {
   return useMutation({
     mutationFn: (input: {
       ids: string[];
-      patch?: { statusId?: string; priority?: string | null; assigneeIds?: string[]; dueDate?: string | null; archived?: boolean };
+      patch?: { statusId?: string; status?: Pick<TaskWithRelations["status"], "name" | "type">; priority?: string | null; assigneeIds?: string[]; dueDate?: string | null; archived?: boolean };
       delete?: boolean;
     }) => apiSend("/api/tasks/bulk", "POST", input),
     onSettled: () => {

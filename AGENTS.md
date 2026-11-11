@@ -33,8 +33,9 @@ notices (e.g. the `middleware`→`proxy` rename already done in this repo).
    stay at 0 errors; unit + e2e must pass.
 3. **Match the surrounding code.** Reuse the established patterns (hooks,
    services, primitives) and the `--cu-*` design tokens. Read neighbors first.
-4. **Security is not optional.** Every mutating route requires auth + the right
-   role (`requireRole`). Guests are read-only.
+4. **Security is not optional.** Every mutating route requires authentication
+   and the appropriate workspace role or explicit item permission. Guests have
+   view access by default.
 5. **Leave the docs better than you found them.** Record decisions and progress
    where they belong (see below).
 

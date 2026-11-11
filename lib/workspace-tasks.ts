@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { visibleSecondaryTaskIds } from "@/lib/task-placements";
 
 export type WorkspaceTaskFilters = {
   q: string;
@@ -11,9 +12,10 @@ export type WorkspaceTaskFilters = {
 };
 
 export async function getWorkspaceTasks(workspaceId: string, filters: WorkspaceTaskFilters) {
+  const secondaryIds = filters.listId ? await visibleSecondaryTaskIds(prisma, filters.listId) : [];
   const where: Prisma.TaskWhereInput = {
     list: { space: { workspaceId }, archivedAt: null }, archived: false, deletedAt: null,
-    ...(filters.listId && { listId: filters.listId }),
+    ...(filters.listId && { OR: [{ listId: filters.listId }, { id: { in: secondaryIds } }] }),
     ...(filters.q && { name: { contains: filters.q, mode: "insensitive" } }),
     ...(filters.assignee && { assignees: filters.assignee === "unassigned" ? { none: {} } : { some: { userId: filters.assignee } } }),
     ...(filters.status !== "all" && { status: { type: { in: filters.status === "closed" ? ["DONE", "CLOSED"] : ["NOT_STARTED", "ACTIVE"] } } }),

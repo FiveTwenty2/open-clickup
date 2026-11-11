@@ -6,6 +6,7 @@ import { requireTaskInWorkspace } from "@/lib/integration-access";
 import { userSelect } from "@/lib/queries";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 
@@ -21,10 +22,11 @@ const schema = z.discriminatedUnion("action", [
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("GUEST");
   const input = await readJson(req, schema);
 
   const task = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireResourcePermission("task", taskId, permissionLevels.EDIT);
 
   if (input.action === "start") {
     // one running timer per user — stop any other running entry first

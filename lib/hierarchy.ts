@@ -1,13 +1,9 @@
 import { ApiError } from "@/lib/api-helpers";
 import { prisma } from "@/lib/db";
-import { StatusType, ViewType } from "@/lib/generated/prisma/client";
+import { ViewType } from "@/lib/generated/prisma/client";
 
-export const STATUS_TEMPLATE = [
-  { name: "TO DO", color: "#87909e", type: StatusType.NOT_STARTED },
-  { name: "IN PROGRESS", color: "#5b9fff", type: StatusType.ACTIVE },
-  { name: "IN REVIEW", color: "#a875ff", type: StatusType.ACTIVE },
-  { name: "COMPLETE", color: "#6bc950", type: StatusType.DONE },
-];
+import { DEFAULT_WORKFLOW, lockWorkflows, statusCreate, workflowFor } from "@/lib/status-workflows";
+export const STATUS_TEMPLATE = DEFAULT_WORKFLOW.map(({ name, color, type }) => ({ name, color, type }));
 
 const DEFAULT_VIEWS = [
   { name: "List", type: ViewType.LIST },
@@ -29,25 +25,25 @@ const LIST_COLORS = ["#7b68ee", "#fd71af", "#ff7800", "#2ecd6f", "#0ab1e8", "#9b
 
 /** Create a list with the default status workflow + the five views. */
 export async function createListWithDefaults(opts: {
+  workspaceId: string;
   spaceId: string;
   folderId?: string | null;
   name: string;
 }) {
-  const count = await prisma.list.count({ where: { spaceId: opts.spaceId } });
-  const last = await prisma.list.findFirst({
-    where: { spaceId: opts.spaceId, folderId: opts.folderId ?? null },
-    orderBy: { position: "desc" },
-  });
-
-  return prisma.list.create({
-    data: {
-      spaceId: opts.spaceId,
-      folderId: opts.folderId ?? null,
-      name: opts.name,
-      color: LIST_COLORS[count % LIST_COLORS.length],
-      position: (last?.position ?? 0) + 1000,
-      statuses: { create: STATUS_TEMPLATE.map((s, i) => ({ ...s, position: i })) },
-      views: { create: DEFAULT_VIEWS.map((v, i) => ({ ...v, position: i })) },
-    },
+  return prisma.$transaction(async (tx) => {
+    await lockWorkflows(tx, opts.workspaceId);
+    const count = await tx.list.count({ where: { spaceId: opts.spaceId } });
+    const folderId = opts.folderId ?? null;
+    const last = await tx.list.aggregate({ where: { spaceId: opts.spaceId, folderId }, _max: { position: true } });
+    const { workflow } = await workflowFor(tx, { spaceId: opts.spaceId, folderId });
+    return tx.list.create({
+      data: {
+        spaceId: opts.spaceId, folderId, name: opts.name, inheritStatuses: true,
+        color: LIST_COLORS[count % LIST_COLORS.length],
+        position: (last._max.position ?? 0) + 1000,
+        statuses: { create: statusCreate(workflow) },
+        views: { create: DEFAULT_VIEWS.map((view, position) => ({ ...view, position })) },
+      },
+    });
   });
 }

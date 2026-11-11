@@ -30,12 +30,16 @@ Hierarchy, five views, custom fields, real-time collaboration and dark mode — 
 
 **Hierarchy** — Workspaces → Spaces → Folders → Lists → Tasks → Subtasks, with inline create / rename / delete.
 
-**5 views** (per list, each with its own saved configuration):
-- **List** — grouped, inline-editable, drag-to-reorder, custom-field columns
-- **Board** — Kanban with drag-and-drop, collapsible columns, WIP limits
+**Saved views** at list, folder, space and workspace levels:
+- **List** — grouping, inline status changes and bulk edits. A list's own views also support drag ordering and custom-field columns.
+- **Board** — Kanban with drag-and-drop. A list's own board also supports collapsible columns and WIP limits.
 - **Calendar** — month & week views, drag tasks to reschedule
 - **Gantt** — timeline with start→due bars you can drag/resize, plus dependency arrows
 - **Table** — spreadsheet-style grid with multi-select
+- **Timeline and Team** — scheduled work and team assignments
+- **Mind Map, Map and Embed** — task hierarchies or freeform branches, task locations, and embedded HTTPS pages
+
+**Hierarchy access** — use **Sharing & permissions** on spaces, folders, lists and tasks to set privacy and grant access to people or teams. People need access to each private parent. A task can appear in multiple lists while keeping its home list and access rules. Lists can inherit statuses from a space or folder and override them as needed.
 
 **Tasks** — rich-text descriptions, custom statuses, priorities, multiple assignees, start/due dates, tags, **custom fields** (text, number, dropdown, labels, date, checkbox, rating…), subtasks, **checklists**, **time tracking** (estimates + live timer), **dependencies** (waiting-on / blocking), **recurring** tasks, **file attachments**, watchers, duplicate, and move-between-lists.
 
@@ -55,7 +59,7 @@ Hierarchy, five views, custom fields, real-time collaboration and dark mode — 
 
 **List tools** — import tasks and subtasks from CSV with validation before writing, export an active list, and rename, duplicate or remove views. List owners and admins can set up simple rules that act when a task is created or enters a status.
 
-**Workspace members** — the first account on an empty database creates the workspace and becomes its owner. After that, owners and admins share email-specific invitation links from **Workspace members**. Guest accounts can read the workspace and cannot edit tasks.
+**Workspace members** — the first account on an empty database creates the workspace and becomes its owner. After that, owners and admins share email-specific invitation links from **Workspace members**. Guest accounts start with view access. Item grants can allow commenting or editing.
 
 **Productivity** — filter / sort / **group-by** (status · assignee · priority) on every view, a **⌘K command palette**, keyboard shortcuts, **multi-select + bulk actions**, **task templates**, **favorites**, a "My Work" home, a status-workflow editor, **dark mode**, and a mobile-responsive layout.
 
@@ -136,6 +140,8 @@ pnpm build && pnpm start
 ```
 
 Set `DATABASE_URL` to your Postgres instance and run `pnpm prisma migrate deploy` on deploy. The app runs anywhere Node 20+ runs (a VM, a container, or any Node host); point it at a managed or self-run Postgres. Real-time uses in-process pub/sub — for multiple instances behind a load balancer, swap it for Redis pub/sub (see `lib/events.ts`).
+
+The access-control migration uses a cluster role named `open_clickup_request`. The migration user must be able to create and grant that role, or a database administrator can provision the restricted `NOLOGIN NOINHERIT NOBYPASSRLS` role and grant it to the migration and runtime users in advance. The runtime user must be able to `SET ROLE open_clickup_request`. The migration installs the database-specific grants and row policies.
 
 A `GET /api/health` endpoint returns `200` when the database is reachable (`503` otherwise) for load-balancer and uptime checks; the Docker app container uses it as its healthcheck.
 

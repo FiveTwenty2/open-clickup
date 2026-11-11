@@ -6,6 +6,7 @@ import { PanelLeft, Menu } from "lucide-react";
 import { useBootstrap, useRealtime } from "@/lib/hooks";
 import { WorkspaceProvider } from "@/components/workspace-context";
 import { Sidebar } from "@/components/sidebar/sidebar";
+import { ItemSharingHost } from "@/components/sharing/item-sharing";
 import { CommandPalette } from "@/components/command-palette";
 import { ShortcutsHelp } from "@/components/shortcuts-help";
 
@@ -110,6 +111,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+        <ItemSharingHost />
         <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     </WorkspaceProvider>

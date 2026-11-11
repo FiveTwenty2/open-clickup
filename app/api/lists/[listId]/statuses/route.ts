@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { StatusType } from "@/lib/generated/prisma/client";
 import { requireRole } from "@/lib/permissions";
 import { requireIntegrationAccess, requireListInWorkspace } from "@/lib/integration-access";
+import { lockWorkflows } from "@/lib/status-workflows";
 import { publish } from "@/lib/events";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 
@@ -29,15 +30,16 @@ export const POST = route(async (req, { params }: Ctx) => {
   const { workspaceId } = await requireRole("MEMBER");
   await requireListInWorkspace(listId, workspaceId);
   const { name, color, type } = await readJson(req, createSchema);
-  const last = await prisma.status.findFirst({ where: { listId }, orderBy: { position: "desc" } });
-  const status = await prisma.status.create({
-    data: {
-      listId,
-      name,
-      color: color ?? "#87909e",
-      type: (type as StatusType) ?? StatusType.NOT_STARTED,
-      position: (last?.position ?? 0) + 1,
-    },
+  const status = await prisma.$transaction(async (tx) => {
+    await lockWorkflows(tx, workspaceId);
+    const last = await tx.status.findFirst({ where: { listId }, orderBy: { position: "desc" } });
+    await tx.list.update({ where: { id: listId }, data: { inheritStatuses: false } });
+    return tx.status.create({
+      data: {
+        listId, name, color: color ?? "#87909e", type: type ?? StatusType.NOT_STARTED,
+        position: (last?.position ?? 0) + 1,
+      },
+    });
   });
   publish({ type: "list", listId });
   return NextResponse.json(status, { status: 201 });
@@ -48,14 +50,16 @@ export const PUT = route(async (req, { params }: Ctx) => {
   const { workspaceId } = await requireRole("MEMBER");
   await requireListInWorkspace(listId, workspaceId);
   const { ids } = await readJson(req, reorderSchema);
-  const existing = await prisma.status.findMany({ where: { listId }, select: { id: true } });
-  if (new Set(ids).size !== existing.length || ids.length !== existing.length || existing.some((status) => !ids.includes(status.id))) {
-    throw new ApiError(400, "Choose every status from this list once");
-  }
-  await prisma.$transaction(
-    ids.map((id, i) => prisma.status.update({ where: { id, listId }, data: { position: i } })),
-  );
-  const statuses = await prisma.status.findMany({ where: { listId }, orderBy: { position: "asc" } });
+  const statuses = await prisma.$transaction(async (tx) => {
+    await lockWorkflows(tx, workspaceId);
+    const existing = await tx.status.findMany({ where: { listId }, select: { id: true } });
+    if (new Set(ids).size !== existing.length || ids.length !== existing.length || existing.some((status) => !ids.includes(status.id))) {
+      throw new ApiError(400, "Choose every status from this list once");
+    }
+    await tx.list.update({ where: { id: listId }, data: { inheritStatuses: false } });
+    for (const [position, id] of ids.entries()) await tx.status.update({ where: { id, listId }, data: { position } });
+    return tx.status.findMany({ where: { listId }, orderBy: { position: "asc" } });
+  });
   publish({ type: "list", listId });
   return NextResponse.json(statuses);
 });

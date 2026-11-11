@@ -2,11 +2,14 @@ import { prisma } from "@/lib/db";
 import { Priority, Prisma } from "@/lib/generated/prisma/client";
 import { taskInclude } from "@/lib/queries";
 import { publish } from "@/lib/events";
+import { visibleSecondaryListIds } from "@/lib/task-placements";
 import { createNotifications } from "@/lib/notifications";
 import { nextOccurrence, type Recurrence } from "@/lib/recurrence";
 import { ApiError } from "@/lib/api-helpers";
 import { isCompletedStatus } from "@/lib/task-status";
 import { applyTaskAutomations } from "@/lib/task-automations";
+import { accessContext } from "@/lib/access-context";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 export async function createTask(input: {
   listId: string;
@@ -90,7 +93,7 @@ export type TaskPatch = {
   watcherIds?: string[]; // full replacement set
 };
 
-export async function updateTask(taskId: string, patch: TaskPatch, actorId?: string) {
+export async function updateTask(taskId: string, patch: TaskPatch, actorId?: string, placementListId?: string) {
   const existing = await prisma.task.findUnique({
     where: { id: taskId, deletedAt: null },
     include: { assignees: true, tags: true, watchers: true, status: true },
@@ -114,7 +117,10 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
   if (patch.name !== undefined) data.name = patch.name;
   if (patch.description !== undefined) data.description = patch.description;
   if (patch.priority !== undefined) data.priority = patch.priority;
-  if (patch.position !== undefined) data.position = patch.position;
+  const placementRank = patch.position !== undefined && placementListId && placementListId !== existing.listId
+    ? { listId: placementListId, position: patch.position }
+    : undefined;
+  if (patch.position !== undefined && !placementRank) data.position = patch.position;
   if (patch.timeEstimate !== undefined) data.timeEstimate = patch.timeEstimate;
   if (patch.recurrence !== undefined) data.recurrence = patch.recurrence || null;
   if (patch.archived !== undefined) data.archived = patch.archived;
@@ -204,21 +210,33 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
   }
 
   const task = await prisma.$transaction(async (tx) => {
+    const workspaceId = accessContext()?.workspaceId;
+    if (becameDone && workspaceId) {
+      await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
+    }
+    if (placementRank) await tx.$queryRaw`SELECT id FROM "List" WHERE id = ${placementRank.listId} FOR NO KEY UPDATE`;
     const updated = await tx.task.update({ where: { id: taskId, deletedAt: null }, data, include: taskInclude });
+    if (placementRank) {
+      if (!(await visibleSecondaryListIds(tx, taskId)).includes(placementRank.listId)) {
+        throw new ApiError(409, "The task is no longer in this list");
+      }
+      await tx.taskListMembership.upsert({
+        where: { taskId_listId: { taskId, listId: placementRank.listId } },
+        create: { taskId, ...placementRank, explicit: false },
+        update: { position: placementRank.position },
+      });
+    }
     if (activityLog.length) await tx.activity.createMany({
       data: activityLog.map((entry) => ({
         taskId, userId: actorId, type: entry.type, data: entry.data as Prisma.InputJsonValue,
       })),
     });
+    if (becameDone && updated.recurrence) await spawnNextOccurrence(tx, updated, actorId);
     return updated;
   });
 
-  // completing a recurring task spawns the next occurrence
-  if (becameDone && existing.recurrence) {
-    await spawnNextOccurrence(existing, actorId);
-  }
-
   publish({ type: "list", listId: existing.listId });
+  if (placementRank) publish({ type: "list", listId: placementRank.listId });
 
   if (addedAssignees.length && actorId) {
     await createNotifications({
@@ -233,8 +251,11 @@ export async function updateTask(taskId: string, patch: TaskPatch, actorId?: str
 }
 
 type RecurringSource = {
+  id: string;
   listId: string;
   parentId: string | null;
+  private: boolean;
+  privacyOwnerId: string | null;
   name: string;
   description: string | null;
   priority: Priority | null;
@@ -247,28 +268,31 @@ type RecurringSource = {
 };
 
 /** Clone a completed recurring task as a fresh open task with advanced dates. */
-async function spawnNextOccurrence(src: RecurringSource, actorId?: string) {
+async function spawnNextOccurrence(db: Prisma.TransactionClient, src: RecurringSource, actorId?: string) {
   const rule = src.recurrence as Recurrence;
   const base = src.dueDate ?? new Date();
   const dueDate = nextOccurrence(base, rule);
   const startDate = src.startDate ? nextOccurrence(src.startDate, rule) : null;
 
-  const firstStatus = await prisma.status.findFirst({
+  if (accessContext()) await requireResourcePermission(src.parentId ? "task" : "list", src.parentId ?? src.listId, permissionLevels.EDIT, db);
+  const firstStatus = await db.status.findFirst({
     where: { listId: src.listId },
     orderBy: { position: "asc" },
   });
   if (!firstStatus) return;
 
-  const last = await prisma.task.findFirst({
+  const last = await db.task.findFirst({
     where: { listId: src.listId, parentId: src.parentId ?? null },
     orderBy: { position: "desc" },
   });
 
-  await prisma.task.create({
+  const next = await db.task.create({
     data: {
       listId: src.listId,
       statusId: firstStatus.id,
       parentId: src.parentId,
+      private: src.private,
+      privacyOwnerId: src.private ? actorId ?? src.privacyOwnerId : null,
       name: src.name,
       description: src.description,
       priority: src.priority,
@@ -284,4 +308,7 @@ async function spawnNextOccurrence(src: RecurringSource, actorId?: string) {
       tags: src.tags.length ? { create: src.tags.map((t) => ({ tagId: t.tagId })) } : undefined,
     },
   });
+  if (src.private && accessContext()) {
+    await db.$executeRaw`SELECT oc_carry_recurrence_access(${src.id}, ${next.id})`;
+  }
 }

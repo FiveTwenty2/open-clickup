@@ -6,6 +6,7 @@ import { requireIntegrationAccess, requireListInWorkspace } from "@/lib/integrat
 import { requireRole } from "@/lib/permissions";
 import { publish } from "@/lib/events";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ listId: string }> };
 const schema = z.object({
@@ -25,9 +26,10 @@ export const GET = route(async (req, { params }: Ctx) => {
 
 export const PATCH = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const { user, workspaceId } = await requireIntegrationAccess(req, true, true);
   const { archived, ...fields } = await readJson(req, schema);
   const list = await prisma.$transaction(async (tx) => {
+    await requireResourcePermission("list", listId, permissionLevels.EDIT, tx);
     const current = await tx.list.findFirst({
       where: { id: listId, space: { workspaceId } }, select: { archivedAt: true },
     });
@@ -43,7 +45,8 @@ export const PATCH = route(async (req, { params }: Ctx) => {
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { listId } = await params;
-  const { workspaceId } = await requireRole("MEMBER");
+  const { workspaceId } = await requireRole("GUEST");
+  await requireResourcePermission("list", listId, permissionLevels.FULL);
   await prisma.list.delete({ where: { id: listId, space: { workspaceId } } });
   publish({ type: "bootstrap" });
   return NextResponse.json({ ok: true });

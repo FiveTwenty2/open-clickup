@@ -14,7 +14,7 @@ import { TaskContextMenu } from "@/components/task/task-context-menu";
 import type { StatusModel, TaskWithRelations } from "@/lib/queries";
 import { StatusCircle } from "@/components/menus/status-control";
 import { useCreateTask, useUpdateTask } from "@/lib/hooks";
-import { useWorkspace } from "@/components/workspace-context";
+import { useOptionalWorkspace } from "@/components/workspace-context";
 
 const modes = { day: "Day", four: "4 days", week: "Week", month: "Month" } as const;
 type Mode = keyof typeof modes;
@@ -32,16 +32,17 @@ function dateOnDay(task: CalendarTask, day: string) {
 }
 
 export function CalendarView({
-  tasks: source, listId, onOpenTask, canSchedule, lists = [], statuses,
+  tasks: source, listId, onOpenTask, canSchedule, lists = [], statuses, includeSubtasks,
 }: {
   tasks: CalendarTask[];
   listId?: string;
   lists?: { id: string; name: string }[];
   statuses?: StatusModel[];
-  onOpenTask: (id: string, listId: string) => void;
+  onOpenTask?: (id: string, listId: string) => void;
   canSchedule: boolean;
+  includeSubtasks?: boolean;
 }) {
-  const { currentUser } = useWorkspace();
+  const currentUser = useOptionalWorkspace()?.currentUser;
   const [cursor, setCursor] = useState(() => new Date());
   const [mode, setMode] = useState<Mode>("month");
   const [timeGrid, setTimeGrid] = useState(false);
@@ -68,8 +69,8 @@ export function CalendarView({
     return eachDayOfInterval({ start: startOfDay(cursor), end: addDays(startOfDay(cursor), mode === "four" ? 3 : 0) });
   }, [cursor, mode]);
 
-  const tasks = source.filter((task) => showSubtasks || !task.parentId)
-    .filter((task) => !mine || task.assignees.some((assignee) => assignee.userId === currentUser.id));
+  const tasks = source.filter((task) => (includeSubtasks ?? showSubtasks) || !task.parentId)
+    .filter((task) => !mine || task.assignees.some((assignee) => assignee.userId === currentUser?.id));
   const events = new Map(days.map((day) => [keyOf(day), [] as CalendarTask[]]));
   const unscheduled: CalendarTask[] = [];
   const today = startOfDay(new Date());
@@ -135,8 +136,8 @@ export function CalendarView({
         <button className={control} onClick={() => setCursor(new Date())}>Today</button>
         <input type="date" aria-label="Go to calendar date" className={control + " bg-cu-panel"} value={keyOf(cursor)}
           onChange={(event) => { if (event.target.value) setCursor(new Date(event.target.value + "T12:00:00")); }} />
-        <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Me mode</label>
-        <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={showSubtasks} onChange={(e) => setShowSubtasks(e.target.checked)} /> Show subtasks</label>
+        {currentUser && <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Me mode</label>}
+        {includeSubtasks === undefined && <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={showSubtasks} onChange={(e) => setShowSubtasks(e.target.checked)} /> Show subtasks</label>}
         {mode !== "month" && <label className="flex items-center gap-1 text-xs">
           <input type="checkbox" checked={timeGrid} onChange={(event) => setTimeGrid(event.target.checked)} /> Time grid
         </label>}
@@ -184,7 +185,7 @@ export function CalendarView({
                   byHour.set(hour, entries);
                 }
                 const renderTask = (task: CalendarTask) => (
-                  <DraggableTask key={task.id} task={task} statuses={statuses} day={key} canSchedule={canSchedule} showTime={mode !== "month"} onOpen={() => onOpenTask(task.id, task.listId)} />
+                  <DraggableTask key={task.id} task={task} statuses={statuses} day={key} canSchedule={canSchedule} showTime={mode !== "month"} onOpen={onOpenTask && (() => onOpenTask(task.id, task.listId))} />
                 );
                 const expanded = expandedDay === key || mode !== "month";
                 return (
@@ -213,9 +214,9 @@ export function CalendarView({
           </div>
           {showQueue && <aside aria-label="Scheduling queue" className="max-h-full w-full overflow-auto border-cu-border p-3 sm:w-56 sm:border-l">
             <h3 className="mb-2 text-sm font-semibold">Unscheduled ({unscheduled.length})</h3>
-            {unscheduled.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
+            {unscheduled.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} canSchedule={canSchedule} onOpen={onOpenTask && (() => onOpenTask(task.id, task.listId))} />)}
             <h3 className="mb-2 mt-4 text-sm font-semibold">Overdue ({overdue.length})</h3>
-            {overdue.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} day={keyOf(new Date(task.dueDate!))} queue canSchedule={canSchedule} onOpen={() => onOpenTask(task.id, task.listId)} />)}
+            {overdue.map((task) => <DraggableTask key={task.id} task={task} statuses={statuses} day={keyOf(new Date(task.dueDate!))} queue canSchedule={canSchedule} onOpen={onOpenTask && (() => onOpenTask(task.id, task.listId))} />)}
           </aside>}
         </div>
       </DndContext>
@@ -244,17 +245,18 @@ function HourSlot({ date, hour, onCreate, children }: {
 }
 
 function DraggableTask({ task, day, queue, canSchedule, showTime, onOpen, statuses }: {
-  task: CalendarTask; day?: string; queue?: boolean; canSchedule: boolean; showTime?: boolean; onOpen: () => void; statuses?: StatusModel[];
+  task: CalendarTask; day?: string; queue?: boolean; canSchedule: boolean; showTime?: boolean; onOpen?: () => void; statuses?: StatusModel[];
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${task.id}:${queue ? "queue" : day ?? "unscheduled"}`, data: { task, day }, disabled: !canSchedule,
   });
   const timing = day && dateOnDay(task, day);
-  return <TaskContextMenu task={task} statuses={statuses} onOpen={onOpen}><button ref={setNodeRef} {...listeners} {...attributes} onClick={onOpen}
+  const content = <button ref={setNodeRef} {...listeners} {...attributes} onClick={onOpen} aria-disabled={!onOpen}
     className={cn("relative flex w-full min-w-0 items-center gap-1 rounded px-1.5 py-1 text-left text-xs", canSchedule && "touch-none cursor-grab", isDragging && "z-30 opacity-50")}
     style={{ backgroundColor: `${task.status.color}1f`, transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}>
     {task.milestone ? <Diamond role="img" aria-label="Milestone" className="h-3 w-3 shrink-0 fill-current" /> : <StatusCircle status={task.status} size={10} />}
     {showTime && timing && <span className="shrink-0 text-cu-text-secondary">{format(new Date(timing), "HH:mm")}</span>}
     <span className="truncate">{task.name}</span>
-  </button></TaskContextMenu>;
+  </button>;
+  return onOpen ? <TaskContextMenu task={task} statuses={statuses} onOpen={onOpen}>{content}</TaskContextMenu> : content;
 }

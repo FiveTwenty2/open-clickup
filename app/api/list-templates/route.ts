@@ -24,18 +24,24 @@ export const GET = route(async (req) => {
 export const POST = route(async (req) => {
   const { workspaceId } = await requireIntegrationAccess(req, true);
   const { sourceListId, name, includeTasks } = await readJson(req, save);
-  const snapshot = await snapshotList(workspaceId, sourceListId, includeTasks);
-  const template = await prisma.listTemplate.create({
-    data: { name, workspaceId, snapshot: snapshot as Prisma.InputJsonValue }, select: metadata,
+  const template = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
+    const snapshot = await snapshotList(tx, workspaceId, sourceListId, includeTasks);
+    return tx.listTemplate.create({
+      data: { name, workspaceId, snapshot: snapshot as Prisma.InputJsonValue }, select: metadata,
+    });
   }).catch(handleDuplicate);
   return NextResponse.json(template, { status: 201 });
 });
 export const PATCH = route(async (req) => {
   const { workspaceId } = await requireIntegrationAccess(req, true);
   const { id, sourceListId, name, includeTasks } = await readJson(req, save.extend({ id: z.string().min(1) }));
-  const snapshot = await snapshotList(workspaceId, sourceListId, includeTasks);
-  const template = await prisma.listTemplate.update({
-    where: { id, workspaceId }, data: { name, snapshot: snapshot as Prisma.InputJsonValue }, select: metadata,
+  const template = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${workspaceId} FOR UPDATE`;
+    const snapshot = await snapshotList(tx, workspaceId, sourceListId, includeTasks);
+    return tx.listTemplate.update({
+      where: { id, workspaceId }, data: { name, snapshot: snapshot as Prisma.InputJsonValue }, select: metadata,
+    });
   }).catch(handleDuplicate);
   return NextResponse.json(template);
 });

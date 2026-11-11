@@ -1,5 +1,7 @@
 import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { visibleSecondaryListIds, visibleSecondaryTaskIds } from "@/lib/task-placements";
+import { sameStatusDefinition } from "@/lib/task-status";
 
 // ----------------------------------------------------------------------------
 // Reusable include shapes (single source of truth for API <-> client types)
@@ -32,7 +34,7 @@ export const taskInclude = {
   _count: { select: { comments: true, subtasks: { where: { archived: false, deletedAt: null } }, checklists: true } },
 } satisfies Prisma.TaskInclude;
 
-export type TaskWithRelations = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
+export type TaskWithRelations = Prisma.TaskGetPayload<{ include: typeof taskInclude }> & { homeStatuses?: StatusModel[] };
 export type SubtaskWithRelations = TaskWithRelations["subtasks"][number];
 export type UserLite = Prisma.UserGetPayload<{ select: typeof userSelect }>;
 
@@ -83,7 +85,7 @@ export async function getListData(listId: string, viewerId: string) {
   const list = await prisma.list.findUnique({
     where: { id: listId },
     include: {
-      space: { select: { id: true, name: true, color: true, icon: true } },
+      space: { select: { id: true, name: true, color: true, icon: true, workspaceId: true } },
       folder: { select: { id: true, name: true } },
       statuses: { orderBy: { position: "asc" } },
       customFields: {
@@ -98,13 +100,33 @@ export async function getListData(listId: string, viewerId: string) {
   });
   if (!list) return null;
 
+  const secondaryIds = list.archivedAt ? [] : await visibleSecondaryTaskIds(prisma, listId);
   const allTasks = await prisma.task.findMany({
-    where: { listId, archived: false, deletedAt: null },
+    where: {
+      archived: false, deletedAt: null,
+      OR: [{ listId }, { id: { in: secondaryIds } }],
+    },
     orderBy: [{ position: "asc" }, { id: "asc" }],
-    include: taskInclude,
+    include: {
+      ...taskInclude,
+      listMemberships: { where: { listId }, select: { position: true } },
+      list: { select: { statuses: { orderBy: { position: "asc" } } } },
+    },
   });
 
-  const tasks = allTasks.filter((task) => task.parentId === null);
+  const visibleIds = new Set(allTasks.map((task) => task.id));
+  const displayed = allTasks.map(({ listMemberships, list: home, ...task }) => {
+    if (task.listId === listId) return { ...task, homeStatuses: undefined };
+    const matching = list.statuses.find((status) => sameStatusDefinition(status, task.status));
+    return {
+      ...task,
+      homeStatuses: home.statuses,
+      statusId: matching?.id ?? task.statusId,
+      position: listMemberships[0]?.position ?? task.position,
+      parentId: task.parentId && visibleIds.has(task.parentId) ? task.parentId : null,
+    };
+  }).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+  const tasks = displayed.filter((task) => !task.parentId);
 
   // dependency edges between visible tasks (for Gantt arrows)
   const taskIds = tasks.map((t) => t.id);
@@ -115,7 +137,7 @@ export async function getListData(listId: string, viewerId: string) {
       })
     : [];
 
-  return { list, tasks, allTasks, dependencies };
+  return { list, tasks, allTasks: displayed, dependencies };
 }
 
 export type ListData = NonNullable<Awaited<ReturnType<typeof getListData>>>;
@@ -128,7 +150,7 @@ export type CustomFieldWithOptions = ListWithMeta["customFields"][number];
 // ----------------------------------------------------------------------------
 
 export async function getTaskDetail(taskId: string) {
-  return prisma.task.findUnique({
+  const task = await prisma.task.findUnique({
     where: { id: taskId },
     include: {
       ...taskInclude,
@@ -184,6 +206,17 @@ export async function getTaskDetail(taskId: string) {
       },
     },
   });
+  if (!task) return null;
+  const secondaryIds = await visibleSecondaryListIds(prisma, taskId);
+  const additionalLists = secondaryIds.length ? await prisma.list.findMany({
+    where: { id: { in: secondaryIds } },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    select: {
+      id: true, name: true,
+      customFields: { orderBy: { position: "asc" }, include: { options: { orderBy: { position: "asc" } } } },
+    },
+  }) : [];
+  return { ...task, additionalLists };
 }
 
 export type TaskDetail = NonNullable<Awaited<ReturnType<typeof getTaskDetail>>>;

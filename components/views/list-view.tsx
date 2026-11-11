@@ -34,7 +34,7 @@ import { useUpdateTask, useCreateTask, useSetFieldValue, useDeleteTask, useDupli
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiSend } from "@/lib/api";
 import { useWorkspace } from "@/components/workspace-context";
-import { groupTasks, type TaskGroup } from "@/lib/grouping";
+import { availableGroupStatuses, groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
 import { StatusControl } from "@/components/menus/status-control";
 import { TaskContextMenu } from "@/components/task/task-context-menu";
@@ -119,7 +119,7 @@ export function ListView({
   const groups = useMemo(() => {
     if (sortable && groupBy === "none") return groupTasks(cols.all ?? tasks, "none", { statuses, members });
     if (sortable) {
-      return statuses.map((s) => ({
+      return availableGroupStatuses(statuses, tasks).map((s) => ({
         id: s.id,
         label: s.name,
         color: s.color,
@@ -220,7 +220,7 @@ export function ListView({
           firstStatusId={statuses[0]?.id}
           gridStyle={gridStyle}
           sortable={sortable}
-          tree={{ childrenByParent, expandAll: subtasks === "expanded", canReorder }}
+          tree={{ listId: list.id, childrenByParent, expandAll: subtasks === "expanded", canReorder }}
           selected={selected}
           onToggleSelect={toggleSelect}
           onOpenTask={onOpenTask}
@@ -370,7 +370,7 @@ function Group({
         </button>
       )}
 
-      {!collapsed && (
+      {!collapsed && (!group.statusId || statuses.some((status) => status.id === group.statusId)) && (
         <AddTaskRow
           listId={listId}
           statusId={group.statusId ?? firstStatusId}
@@ -383,7 +383,7 @@ function Group({
   );
 }
 
-type RowTree = { childrenByParent: Map<string, TaskWithRelations[]>; expandAll: boolean; canReorder: boolean };
+type RowTree = { listId: string; childrenByParent: Map<string, TaskWithRelations[]>; expandAll: boolean; canReorder: boolean };
 type RowProps = {
   tree: RowTree;
   statuses: StatusModel[];
@@ -441,7 +441,7 @@ function SortableRow({ task, rowProps, depth }: { task: TaskWithRelations; rowPr
 }
 
 function NestedRows({ tasks, depth, rowProps }: { tasks: TaskWithRelations[]; depth: number; rowProps: RowProps }) {
-  const listId = tasks[0]?.listId;
+  const { listId } = rowProps.tree;
   const client = useQueryClient();
   const reorder = useMutation({
     mutationFn: ({ taskId, targetId, placement }: { taskId: string; targetId: string; placement: string }) =>
@@ -564,7 +564,7 @@ function TaskRow({
             ) : null}
           </span>
           <span onClick={(e) => e.stopPropagation()}>
-            <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
+            <StatusControl current={task.status} statuses={task.homeStatuses ?? statuses} taskName={task.name} onChange={(s) => onUpdate(task.id, { statusId: s })} />
           </span>
           {renaming ? (
             <input

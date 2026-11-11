@@ -8,10 +8,10 @@ import { ViewSharing } from "@/components/views/view-sharing";
 import { apiSend } from "@/lib/api";
 import type { ListWithMeta } from "@/lib/queries";
 
-type View = ListWithMeta["views"][number];
+type View = Omit<ListWithMeta["views"][number], "listId"> & { listId?: string };
 const button = "rounded border border-cu-border px-2 py-1 text-sm hover:bg-cu-hover disabled:opacity-50";
 
-export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault, canManage, canShare }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean; canManage: boolean; canShare: boolean }) {
+export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault, canManage, canShare, locationHref, apiBase = "/api/views" }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean; canManage: boolean; canShare: boolean; locationHref?: string; apiBase?: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(view.name);
   const [notice, setNotice] = useState("");
@@ -19,7 +19,7 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
   const client = useQueryClient();
   const mutation = useMutation({
     mutationFn: (action: "rename" | "copy" | "delete" | "default" | "privacy" | "lock") => {
-      const path = `/api/views/${view.id}`;
+      const path = `${apiBase}/${view.id}`;
       if (action === "rename") return apiSend<View>(path, "PATCH", { name });
       if (action === "default") return apiSend<View>(path, "PATCH", { makeDefault: true });
       if (action === "lock") return apiSend<View>(path, "PATCH", { protected: !view.protected });
@@ -28,7 +28,7 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
       return apiSend(path, "DELETE").then(() => null);
     },
     onSuccess: async (result, action) => {
-      await client.invalidateQueries({ queryKey: ["list", view.listId] });
+      await client.invalidateQueries({ queryKey: view.listId ? ["list", view.listId] : ["scoped-views"] });
       if (action === "copy" || action === "delete") selectView(result);
       setOpen(false);
     },
@@ -47,7 +47,7 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
       <Popover.Content align="start" className="z-50 min-w-48 rounded border border-cu-border bg-cu-panel p-3 shadow-lg">
         <button className={button + " mb-2 w-full text-left"} onClick={() => { selectView(view); setOpen(false); }}>Open view</button>
         <button className={button + " mb-2 w-full text-left"} onClick={async () => {
-          const url = new URL(`/l/${view.listId}`, location.origin);
+          const url = new URL(locationHref ?? `/l/${view.listId}`, location.origin);
           url.searchParams.set("view", view.id);
           try { await navigator.clipboard.writeText(url.href); setNotice("View link copied."); }
           catch { setNotice("Could not copy the view link."); }
@@ -69,7 +69,8 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
             onClick={() => confirm ? mutation.mutate("delete") : setConfirm(true)}>{confirm ? "Confirm deletion" : "Delete view"}</button>}
         </div>
         </>}
-        {open && canShare && (view.privateOwnerId || view.type === "LIST" || view.type === "TABLE") && <ViewSharing viewId={view.id} isPrivate={!!view.privateOwnerId} />}
+        {open && canShare && <ViewSharing viewId={view.id} isPrivate={!!view.privateOwnerId} base={apiBase}
+          disclosure={view.type === "MAP" ? "Anyone with the link can see matching task names, statuses, dates, and map coordinates." : view.type === "EMBED" ? "Anyone with the link can see and open this view’s embedded website address." : undefined} />}
         {mutation.isError && <p role="alert" className="mt-2 text-sm text-cu-urgent">Could not update this view.</p>}
       </Popover.Content>
     </Popover.Portal>

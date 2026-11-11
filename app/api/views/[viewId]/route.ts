@@ -4,11 +4,12 @@ import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { savedViewConfig } from "@/lib/saved-view-config";
 import { Prisma } from "@/lib/generated/prisma/client";
 
 type Ctx = { params: Promise<{ viewId: string }> };
 const schema = z.object({
-  config: z.any().optional(),
+  config: savedViewConfig.nullable().optional(),
   name: z.string().trim().min(1).max(80).optional(),
   makeDefault: z.literal(true).optional(),
   protected: z.boolean().optional(),

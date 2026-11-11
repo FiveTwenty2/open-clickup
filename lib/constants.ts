@@ -18,6 +18,11 @@ export const VIEW_META: Record<ViewType, { label: string; icon: string }> = {
   CALENDAR: { label: "Calendar", icon: "calendar" },
   GANTT: { label: "Gantt", icon: "gantt" },
   TABLE: { label: "Table", icon: "table" },
+  TIMELINE: { label: "Timeline", icon: "gantt" },
+  TEAM: { label: "Team", icon: "users" },
+  MIND_MAP: { label: "Mind Map", icon: "network" },
+  MAP: { label: "Map", icon: "map" },
+  EMBED: { label: "Embed", icon: "panel" },
 };
 
 // ClickUp-style preset list/space colors

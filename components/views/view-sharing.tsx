@@ -9,13 +9,13 @@ type Sharing = { private: boolean; readers: string[]; key: string | null };
 type Action = { action: "readers"; userIds: string[] } | { action: "enable" | "revoke" };
 const button = "rounded border border-cu-border px-2 py-1 text-xs hover:bg-cu-hover disabled:opacity-50";
 
-export function ViewSharing({ viewId, isPrivate }: { viewId: string; isPrivate: boolean }) {
+export function ViewSharing({ viewId, isPrivate, base = "/api/views", disclosure }: { viewId: string; isPrivate: boolean; base?: string; disclosure?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [selected, setSelected] = useState<string[] | null>(null);
   const { workspace, currentUser } = useWorkspace();
-  const url = `/api/views/${viewId}/sharing`;
+  const url = `${base}/${viewId}/sharing`;
   const query = useQuery({
-    queryKey: ["view-sharing", viewId], queryFn: () => apiGet<Sharing>(url), enabled: expanded,
+    queryKey: ["view-sharing", base, viewId], queryFn: () => apiGet<Sharing>(url), enabled: expanded,
   });
   const mutation = useMutation({
     mutationFn: (action: Action) => apiSend(url, "PATCH", action),
@@ -46,7 +46,7 @@ export function ViewSharing({ viewId, isPrivate }: { viewId: string; isPrivate: 
         </button>
       </>}
       {query.data && !isPrivate && <>
-        <p className="text-xs text-cu-text-secondary">Anyone with the link can see the matching task names, statuses, priorities, and dates.</p>
+        <p className="text-xs text-cu-text-secondary">{disclosure ?? "Anyone with the link can see matching task names, statuses, priorities, and dates."}</p>
         {publicUrl ? <>
           <input aria-label="Public view URL" className="w-full rounded border border-cu-border bg-cu-panel px-2 py-1 text-xs" value={publicUrl} readOnly onFocus={(event) => event.target.select()} />
           <button className={button} disabled={mutation.isPending} onClick={() => mutation.mutate({ action: "revoke" })}>Revoke public view link</button>

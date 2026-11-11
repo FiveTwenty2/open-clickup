@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireIntegrationAccess } from "@/lib/integration-access";
 import { ApiError, route } from "@/lib/api-helpers";
+import { visibleSecondaryTaskIds } from "@/lib/task-placements";
 
 export const GET = route(async (req) => {
   const { workspaceId } = await requireIntegrationAccess(req);
@@ -11,10 +12,11 @@ export const GET = route(async (req) => {
   const span = +to - +from;
   if (!Number.isFinite(span) || span <= 0 || span > 8 * 86400000) throw new ApiError(400, "Choose a period of up to eight days");
   const listId = params.get("listId");
+  const secondaryIds = listId ? await visibleSecondaryTaskIds(prisma, listId) : [];
   const tasks = await prisma.task.findMany({
     where: {
       list: { archivedAt: null, space: { workspaceId } },
-      ...(listId && { listId }),
+      ...(listId && { AND: [{ OR: [{ listId }, { id: { in: secondaryIds } }] }] }),
       archived: false, deletedAt: null, status: { type: { in: ["NOT_STARTED", "ACTIVE"] } },
       OR: [
         { dueDate: { gte: from, lt: to } },

@@ -21,6 +21,10 @@ export function useWorkspace() {
   return v;
 }
 
+export function useOptionalWorkspace() {
+  return useContext(Ctx);
+}
+
 /** Convenience hook that also exposes the loading/error state. */
 export function useWorkspaceData() {
   return useBootstrap();

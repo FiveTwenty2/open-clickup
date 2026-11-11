@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withAccessContext } from "@/lib/access-context";
 import { ZodType } from "zod";
 
 /** Throw to short-circuit a route handler with a specific HTTP status. */
@@ -51,11 +52,11 @@ export function handleError(e: unknown): NextResponse {
 export function route<Ctx>(
   fn: (req: Request, ctx: Ctx) => Promise<NextResponse>,
 ): (req: Request, ctx: Ctx) => Promise<NextResponse> {
-  return async (req, ctx) => {
+  return async (req, ctx) => withAccessContext(async () => {
     try {
       return await fn(req, ctx);
     } catch (e) {
       return handleError(e);
     }
-  };
+  });
 }

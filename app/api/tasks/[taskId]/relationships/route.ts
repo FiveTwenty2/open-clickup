@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireIntegrationAccess, requireTaskInWorkspace } from "@/lib/integration-access";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 const url = z.url({ protocol: /^https?$/ }).max(2000);
@@ -26,8 +27,9 @@ export const GET = route(async (req, { params }: Ctx) => {
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const { user, workspaceId } = await requireIntegrationAccess(req, true, true);
   const source = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireResourcePermission("task", taskId, permissionLevels.EDIT);
   const data = await readJson(req, z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("task"), otherId: z.string().min(1) }),
     z.object({ kind: z.literal("link"), title: z.string().trim().min(1).max(150), url }),
@@ -36,6 +38,7 @@ export const POST = route(async (req, { params }: Ctx) => {
   if (data.kind === "task") {
     if (data.otherId === taskId) throw new ApiError(400, "Choose a different task");
     lists.push((await requireTaskInWorkspace(data.otherId, workspaceId)).listId);
+    await requireResourcePermission("task", data.otherId, permissionLevels.EDIT);
   }
   await prisma.$transaction(async (tx) => {
     if (data.kind === "task") {
@@ -54,17 +57,20 @@ export const POST = route(async (req, { params }: Ctx) => {
 
 export const DELETE = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const { user, workspaceId } = await requireIntegrationAccess(req, true, true);
   const source = await requireTaskInWorkspace(taskId, workspaceId);
+  await requireResourcePermission("task", taskId, permissionLevels.EDIT);
   const { kind, id } = await readJson(req, z.object({ kind: z.enum(["task", "link"]), id: z.string().min(1) }));
   const lists = [source.listId];
   await prisma.$transaction(async (tx) => {
     if (kind === "task") {
       const where = { id, OR: [{ leftId: taskId, right: scope(workspaceId) }, { rightId: taskId, left: scope(workspaceId) }] };
       const relationship = await tx.taskRelationship.findFirst({
-        where, select: { left: { select: { listId: true } }, right: { select: { listId: true } } },
+        where, select: { leftId: true, rightId: true, left: { select: { listId: true } }, right: { select: { listId: true } } },
       });
-      if (!relationship || !(await tx.taskRelationship.deleteMany({ where })).count) throw new ApiError(404, "Relationship not found");
+      if (!relationship) throw new ApiError(404, "Relationship not found");
+      await requireResourcePermission("task", relationship.leftId === taskId ? relationship.rightId : relationship.leftId, permissionLevels.EDIT, tx);
+      if (!(await tx.taskRelationship.deleteMany({ where })).count) throw new ApiError(404, "Relationship not found");
       lists.push(relationship.left.listId, relationship.right.listId);
     } else if (!(await tx.taskResourceLink.deleteMany({ where: { id, taskId } })).count) throw new ApiError(404, "Link not found");
     await tx.activity.create({ data: { taskId, userId: user.id, type: "relationship_removed" } });

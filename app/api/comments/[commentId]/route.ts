@@ -6,6 +6,7 @@ import { commentFileSelect, userSelect } from "@/lib/queries";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { extractMentionIds } from "@/lib/mentions";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ commentId: string }> };
 // editing the body is author-only; resolving a thread is allowed for any member
@@ -25,9 +26,10 @@ async function load(commentId: string, workspaceId: string) {
 
 export const PATCH = route(async (req, { params }: Ctx) => {
   const { commentId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("GUEST");
   const { body, resolved } = await readJson(req, schema);
   const existing = await load(commentId, workspaceId);
+  await requireResourcePermission("task", existing.taskId, permissionLevels.COMMENT);
 
   if (body !== undefined && existing.userId !== user.id) {
     throw new ApiError(403, "You can only edit your own comments");
@@ -68,8 +70,9 @@ export const PATCH = route(async (req, { params }: Ctx) => {
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { commentId } = await params;
-  const { user, workspaceId } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("GUEST");
   const existing = await load(commentId, workspaceId);
+  await requireResourcePermission("task", existing.taskId, permissionLevels.COMMENT);
   if (existing.userId !== user.id) throw new ApiError(403, "You can only delete your own comments");
 
   await prisma.$transaction([

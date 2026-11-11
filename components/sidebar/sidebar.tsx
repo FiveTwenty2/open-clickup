@@ -45,6 +45,7 @@ import { ProfileDialog } from "@/components/profile-dialog";
 import { ApiTokensDialog } from "@/components/api-tokens-dialog";
 import type { SpaceNode, FolderNode, ListNode } from "@/lib/queries";
 import { Avatar } from "@/components/ui/avatar";
+import { openItemSharing } from "@/components/sharing/item-sharing";
 
 export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
   const { workspace, favorites, currentUser } = useWorkspace();
@@ -111,6 +112,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           <NavItem icon={<ClipboardList className="h-4 w-4" />} label="Audit log" active={pathname === "/audit"} onClick={() => router.push("/audit")} />
         )}
         <NavItem icon={<ListIcon className="h-4 w-4" />} label="All tasks" active={pathname === "/tasks"} onClick={() => router.push("/tasks")} />
+        <NavItem icon={<ListIcon className="h-4 w-4" />} label="Workspace views" active={pathname === "/views/workspace"} onClick={() => router.push("/views/workspace")} />
         <NavItem icon={<LayoutGrid className="h-4 w-4" />} label="Dashboards" active={pathname === "/dashboards"} onClick={() => router.push("/dashboards")} />
         <NavItem icon={<FileText className="h-4 w-4" />} label="Docs" active={pathname === "/docs"} onClick={() => router.push("/docs")} />
         <NavItem icon={<Target className="h-4 w-4" />} label="Goals" active={pathname === "/goals"} onClick={() => router.push("/goals")} />
@@ -294,10 +296,12 @@ function SpaceItem({ space, onTemplate }: { space: SpaceNode; onTemplate: (targe
     <div className="select-none">
       <HierarchyDragRow kind="space" id={space.id} name={space.name}>
       <SidebarContext actions={[
+        { label: "Space views", run: () => router.push(`/views/space/${space.id}`), readOnly: true },
         { label: "New List", run: () => { setOpen(true); setCreating("list"); } },
         { label: "New Folder", run: () => { setOpen(true); setCreating("folder"); } },
         { label: "New List from template", run: () => onTemplate({ spaceId: space.id }) },
         { label: "Rename space", run: () => setRenaming(true) },
+        { label: "Sharing & permissions", run: () => openItemSharing("space", space.id, space.name), readOnly: true },
       ]}><div><Row
         depth={0}
         open={open}
@@ -312,8 +316,10 @@ function SpaceItem({ space, onTemplate }: { space: SpaceNode; onTemplate: (targe
         bold
         onRename={() => setRenaming(true)}
         onDelete={() => remove.mutate({ kind: "spaces", id: space.id })}
+        onSharing={() => openItemSharing("space", space.id, space.name)}
         addMenu={
           <>
+            <MenuItem icon={<ListIcon className="h-4 w-4" />} label="Space views" onSelect={() => router.push(`/views/space/${space.id}`)} />
             <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating("list"); }} />
             <MenuItem icon={<FileText className="h-4 w-4" />} label="New List from template" onSelect={() => onTemplate({ spaceId: space.id })} />
             <MenuItem icon={<FolderPlus className="h-4 w-4" />} label="New Folder" onSelect={() => { setOpen(true); setCreating("folder"); }} />
@@ -386,10 +392,12 @@ function FolderItem({ folder, folders, depth, onTemplate }: { folder: FolderNode
     <div>
       <HierarchyDragRow kind="folder" id={folder.id} name={folder.name}>
       <SidebarContext actions={[
+        { label: "Folder views", run: () => router.push(`/views/folder/${folder.id}`), readOnly: true },
         { label: "New List", run: () => { setOpen(true); setCreating("list"); } },
         { label: "New List from template", run: () => onTemplate({ spaceId: folder.spaceId, folderId: folder.id }) },
         ...(depth < 8 ? [{ label: "New subfolder", run: () => { setOpen(true); setCreating("folder"); } }] : []),
         { label: "Rename folder", run: () => setRenaming(true) },
+        { label: "Sharing & permissions", run: () => openItemSharing("folder", folder.id, folder.name), readOnly: true },
       ]}><div><Row
         depth={depth}
         open={open}
@@ -399,7 +407,9 @@ function FolderItem({ folder, folders, depth, onTemplate }: { folder: FolderNode
         label={folder.name}
         onRename={() => setRenaming(true)}
         onDelete={() => remove.mutate({ kind: "folders", id: folder.id })}
+        onSharing={() => openItemSharing("folder", folder.id, folder.name)}
         addMenu={<>
+          <MenuItem icon={<ListIcon className="h-4 w-4" />} label="Folder views" onSelect={() => router.push(`/views/folder/${folder.id}`)} />
           {depth < 8 && <MenuItem icon={<FolderPlus className="h-4 w-4" />} label="New subfolder" onSelect={() => { setOpen(true); setCreating("folder"); }} />}
           <MenuItem icon={<ListIcon className="h-4 w-4" />} label="New List" onSelect={() => { setOpen(true); setCreating("list"); }} />
           <MenuItem icon={<FileText className="h-4 w-4" />} label="New List from template" onSelect={() => onTemplate({ spaceId: folder.spaceId, folderId: folder.id })} />
@@ -474,6 +484,7 @@ function ListItemRow({ list, depth, onTemplate }: { list: ListNode; depth: numbe
       { label: "Task statuses", run: () => router.push(`/l/${list.id}?settings=statuses`) },
       { label: "Save or update list template", run: () => onTemplate({ sourceListId: list.id }) },
       { label: "Archive list", run: () => archive.mutate() },
+      { label: "Sharing & permissions", run: () => openItemSharing("list", list.id, list.name), readOnly: true },
     ]}><div className={cn(
         "group flex items-center gap-2 rounded-md py-1.5 pr-2 text-[13px]",
         active ? "bg-cu-sidebar-active font-medium text-cu-purple-dark" : "text-cu-text hover:bg-cu-hover-strong",
@@ -490,7 +501,7 @@ function ListItemRow({ list, depth, onTemplate }: { list: ListNode; depth: numbe
       </Link>
       <span className="ml-auto flex items-center gap-1">
         <span className="hidden text-[11px] text-cu-text-tertiary group-hover:inline">{list._count.tasks}</span>
-        {canWrite && <RowMenu label={`Options for ${list.name}`} onRename={() => setRenaming(true)} onArchive={() => archive.mutate()} onTemplate={() => onTemplate({ sourceListId: list.id })} />}
+        <RowMenu label={`Options for ${list.name}`} onRename={canWrite ? () => setRenaming(true) : undefined} onArchive={canWrite ? () => archive.mutate() : undefined} onTemplate={canWrite ? () => onTemplate({ sourceListId: list.id }) : undefined} onSharing={() => openItemSharing("list", list.id, list.name)} />
         {archive.isError && <span role="alert" className="text-xs text-cu-urgent">Archive failed</span>}
       </span>
     </div></SidebarContext></HierarchyDragRow>
@@ -521,6 +532,7 @@ function Row({
   bold,
   onRename,
   onDelete,
+  onSharing,
   onAdd,
   addMenu,
 }: {
@@ -533,6 +545,7 @@ function Row({
   bold?: boolean;
   onRename?: () => void;
   onDelete?: () => void;
+  onSharing?: () => void;
   onAdd?: () => void;
   addMenu?: React.ReactNode;
 }) {
@@ -548,7 +561,7 @@ function Row({
         {leading}
         <span className={cn("truncate", bold && "font-semibold")}>{label}</span>
       </button>
-      {(onRename || onDelete) && <RowMenu onRename={onRename} onDelete={onDelete} />}
+      {(onRename || onDelete || onSharing) && <RowMenu onRename={onRename} onDelete={onDelete} onSharing={onSharing} />}
       {addMenu ? (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -571,7 +584,7 @@ function Row({
   );
 }
 
-function RowMenu({ label = "Options", onRename, onDelete, onArchive, onTemplate }: { label?: string; onRename?: () => void; onDelete?: () => void; onArchive?: () => void; onTemplate?: () => void }) {
+function RowMenu({ label = "Options", onRename, onDelete, onArchive, onTemplate, onSharing }: { label?: string; onRename?: () => void; onDelete?: () => void; onArchive?: () => void; onTemplate?: () => void; onSharing?: () => void }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -586,6 +599,7 @@ function RowMenu({ label = "Options", onRename, onDelete, onArchive, onTemplate 
       <DropdownMenu.Portal>
         <DropdownMenu.Content sideOffset={4} align="end" className="z-50 min-w-[150px] rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg">
           {onRename && <MenuItem icon={<Pencil className="h-4 w-4" />} label="Rename" onSelect={onRename} />}
+          {onSharing && <MenuItem icon={<Settings className="h-4 w-4" />} label="Sharing & permissions" onSelect={onSharing} />}
           {onTemplate && <MenuItem icon={<FileText className="h-4 w-4" />} label="Save or update list template" onSelect={onTemplate} />}
           {onArchive && <MenuItem icon={<Archive className="h-4 w-4" />} label="Archive list" onSelect={onArchive} />}
           {onDelete && <MenuItem icon={<Trash2 className="h-4 w-4" />} label="Delete" onSelect={onDelete} danger />}

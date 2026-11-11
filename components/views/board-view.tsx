@@ -313,7 +313,7 @@ function Column({
           {wip != null && <span className="text-cu-text-tertiary">/{wip}</span>}
         </span>
         {status && <WipEditor status={status} listId={listId} />}
-        <button
+        {(!group.statusId || statuses.some((candidate) => candidate.id === group.statusId)) && <button
           onClick={() =>
             create.mutate({
               listId,
@@ -326,7 +326,7 @@ function Column({
           className="ml-auto rounded p-0.5 text-cu-text-tertiary hover:bg-cu-hover hover:text-cu-text"
         >
           <Plus className="h-4 w-4" />
-        </button>
+        </button>}
       </div>
 
       <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
@@ -340,7 +340,7 @@ function Column({
           {tasks.map((task) => (
             <div key={task.id} className="space-y-1">
               <SortableCard task={task} statuses={statuses} selected={selected.has(task.id)} onToggle={() => onToggleTask(task.id)} onOpenTask={onOpenTask} />
-              <BoardChildren parentId={task.id} tree={childrenByParent} statuses={statuses} onOpen={onOpenTask} canReorder={reorderSubtasks} />
+              <BoardChildren listId={listId} parentId={task.id} tree={childrenByParent} statuses={statuses} onOpen={onOpenTask} canReorder={reorderSubtasks} />
             </div>
           ))}
         </div>
@@ -349,17 +349,17 @@ function Column({
   );
 }
 
-function BoardChildren({ parentId, tree, statuses, onOpen, canReorder }: {
-  parentId: string; tree: Map<string, TaskWithRelations[]>; statuses: StatusModel[]; onOpen: (id: string) => void; canReorder: boolean;
+function BoardChildren({ listId, parentId, tree, statuses, onOpen, canReorder }: {
+  listId: string; parentId: string; tree: Map<string, TaskWithRelations[]>; statuses: StatusModel[]; onOpen: (id: string) => void; canReorder: boolean;
 }) {
   const children = tree.get(parentId);
   if (!children?.length) return null;
   return <div className="ml-3 space-y-1 border-l border-cu-border pl-2">
     {children.map((task) => <div key={task.id}>
-      <SiblingDrag task={task} enabled={canReorder}><TaskContextMenu task={task} statuses={statuses} onOpen={() => onOpen(task.id)}>
+      <SiblingDrag task={{ ...task, listId }} enabled={canReorder}><TaskContextMenu task={task} statuses={statuses} onOpen={() => onOpen(task.id)}>
         <button className="w-full rounded bg-cu-panel p-2 text-left text-xs hover:bg-cu-hover" onClick={() => onOpen(task.id)}>{task.name}</button>
       </TaskContextMenu></SiblingDrag>
-      <BoardChildren parentId={task.id} tree={tree} statuses={statuses} onOpen={onOpen} canReorder={canReorder} />
+      <BoardChildren listId={listId} parentId={task.id} tree={tree} statuses={statuses} onOpen={onOpen} canReorder={canReorder} />
     </div>)}
   </div>;
 }
@@ -480,7 +480,7 @@ function SortableCard({ task, statuses, selected, onToggle, onOpenTask }: { task
       />
       <Card task={task} statusControl={
         <span onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-          <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(statusId) => update.mutate({ taskId: task.id, patch: { statusId } })} />
+          <StatusControl current={task.status} statuses={task.homeStatuses ?? statuses} taskName={task.name} onChange={(statusId) => update.mutate({ taskId: task.id, patch: { statusId } })} />
         </span>
       } />
     </div>

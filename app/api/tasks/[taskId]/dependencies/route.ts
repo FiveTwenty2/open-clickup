@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireIntegrationAccess, requireTaskInWorkspace } from "@/lib/integration-access";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { permissionLevels, requireResourcePermission } from "@/lib/resource-permissions";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 
@@ -14,7 +15,7 @@ const schema = z.object({
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { workspaceId } = await requireIntegrationAccess(req, true);
+  const { workspaceId } = await requireIntegrationAccess(req, true, true);
   const { type, otherTaskId } = await readJson(req, schema);
 
   if (otherTaskId === taskId) throw new ApiError(400, "A task can't depend on itself");
@@ -28,6 +29,8 @@ export const POST = route(async (req, { params }: Ctx) => {
     requireTaskInWorkspace(taskId, workspaceId),
     requireTaskInWorkspace(otherTaskId, workspaceId),
   ]);
+  await requireResourcePermission("task", taskId, permissionLevels.EDIT);
+  await requireResourcePermission("task", otherTaskId, permissionLevels.EDIT);
 
   // reject the reverse edge (would create an immediate cycle)
   const reverse = await prisma.taskDependency.findUnique({

@@ -19,6 +19,7 @@ import {
   Trash2,
   Reply,
   Check,
+  LockKeyhole,
 } from "lucide-react";
 import { MAX_COMMENT_FILES, MAX_COMMENT_FILE_MIB, MAX_COMMENT_FILE_BYTES } from "@/lib/comment-file-limits";
 import { apiGet, apiSend } from "@/lib/api";
@@ -35,6 +36,7 @@ import { DateControl } from "@/components/menus/date-control";
 import { RecurrenceControl } from "@/components/menus/recurrence-control";
 import { CustomFieldControl } from "@/components/views/custom-field-control";
 import { Avatar } from "@/components/ui/avatar";
+import { StatusBadge } from "@/components/ui/primitives";
 import { TagControl } from "@/components/menus/tag-control";
 import { RichEditor, RichText } from "@/components/ui/rich-editor";
 import { Checklists } from "@/components/task/checklists";
@@ -42,7 +44,9 @@ import { CommentReactions } from "@/components/task/comment-reactions";
 import { TaskMenu } from "@/components/task/save-template";
 import { Attachments } from "@/components/task/attachments";
 import { TimeTracking } from "@/components/task/time-tracking";
+import { TaskLists } from "@/components/task/task-lists";
 import { PublicTaskShare } from "@/components/task/public-share";
+import { openItemSharing } from "@/components/sharing/item-sharing";
 import { TaskTypeControl } from "@/components/task/task-type-control";
 import { Relationships } from "@/components/task/relationships";
 import { Dependencies } from "@/components/task/dependencies";
@@ -64,12 +68,13 @@ export function TaskModal({
 }) {
   const qc = useQueryClient();
   const { currentUser, workspace } = useWorkspace();
-  const canSetType = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
   const mentions = workspace.members.map((m) => ({ id: m.user.id, label: m.user.name }));
   const { data: task, isLoading, isError, refetch } = useQuery({
     queryKey: ["task", taskId],
-    queryFn: () => apiGet<TaskDetail>(`/api/tasks/${taskId}`),
+    queryFn: () => apiGet<TaskDetail & { permission: number }>(`/api/tasks/${taskId}`),
   });
+  const canSetType = (task?.permission ?? 0) >= 3;
+  const canComment = (task?.permission ?? 0) >= 2;
   const commentsLoaded = Boolean(task);
   useEffect(() => {
     if (!commentId || !commentsLoaded) return;
@@ -96,7 +101,7 @@ export function TaskModal({
 
   const addSubtask = useMutation({
     mutationFn: (name: string) =>
-      apiSend("/api/tasks", "POST", { listId, name, parentId: taskId }),
+      apiSend("/api/tasks", "POST", { listId: task?.listId ?? listId, name, parentId: taskId }),
     onSuccess: invalidate,
   });
 
@@ -121,7 +126,7 @@ export function TaskModal({
         >
           <Dialog.Title className="sr-only">Task details</Dialog.Title>
 
-          {isError && !task ? (
+          {isError ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-sm">
               <p role="alert">Could not load this task. It may have been deleted or moved.</p>
               <button className="text-cu-purple" onClick={() => void refetch()}>Try again</button>
@@ -135,13 +140,13 @@ export function TaskModal({
               <div className="flex items-center gap-2 border-b border-cu-border px-4 py-2.5">
                 <TaskTypeControl value={task.taskType} editable={canSetType} onChange={(taskTypeId) => update.mutate({ taskTypeId })} />
                 {task.milestone && <span className="flex items-center gap-1 text-xs text-cu-purple"><Diamond className="h-3.5 w-3.5 fill-current" /> Milestone</span>}
-                <StatusControl
+                {canSetType ? <StatusControl
                   current={task.status}
                   statuses={task.list.statuses}
                   variant="badge"
                   taskName={task.name}
                   onChange={(statusId) => update.mutate({ statusId })}
-                />
+                /> : <StatusBadge name={task.status.name} color={task.status.color} />}
                 <span className="text-[13px] text-cu-text-tertiary">in {task.list.name}</span>
                 {task.parentId && onOpenTask && (
                   <button className="rounded px-2 py-1 text-[13px] text-cu-purple hover:bg-cu-hover" onClick={() => onOpenTask(task.parentId!)}>
@@ -149,8 +154,14 @@ export function TaskModal({
                   </button>
                 )}
                 <div className="ml-auto flex items-center gap-1">
-                  {canSetType && !task.archived && <PublicTaskShare key={taskId} taskId={taskId} />}
-                  <TaskMenu taskId={taskId} defaultName={task.name} listId={listId} archived={task.archived} onClose={onClose} onOpenTask={onOpenTask} />
+                  <TaskLists key={taskId + "-lists"} taskId={taskId} homeListId={task.list.id} canEdit={canSetType && !task.archived} />
+                  {task.permission === 4 && !task.archived && <PublicTaskShare key={taskId} taskId={taskId} />}
+                  <button type="button" aria-label="Sharing & permissions" title="Sharing & permissions"
+                    onClick={() => openItemSharing("task", taskId, task.name)}
+                    className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
+                    <LockKeyhole className="h-4 w-4" />
+                  </button>
+                  {task.permission === 4 && <TaskMenu taskId={taskId} defaultName={task.name} listId={task.list.id} archived={task.archived} onClose={onClose} onOpenTask={onOpenTask} />}
                   <button aria-label={expanded ? "Restore task window" : "Expand task window"} aria-pressed={expanded} onClick={() => setExpanded(!expanded)} className="rounded p-1.5 text-cu-text-tertiary hover:bg-cu-hover">
                     <Expand className="h-4 w-4" />
                   </button>
@@ -163,22 +174,22 @@ export function TaskModal({
               <div className="flex min-h-0 flex-1 flex-col md:flex-row">
                 {/* main */}
                 <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
-                  <TitleField
+                  {canSetType ? <TitleField
                     value={task.name}
                     onSave={(name) => update.mutate({ name })}
-                  />
+                  /> : <h2 className="text-xl font-semibold">{task.name}</h2>}
 
                   <div className="mt-3">
                     <div className="mb-1 flex items-center gap-1.5 text-[13px] font-medium text-cu-text-secondary">
                       <TextAlignStart className="h-4 w-4" /> Description
                     </div>
-                    <RichEditor
+                    {canSetType ? <RichEditor
                       key={task.id}
                       content={task.description ?? ""}
                       placeholder="Add a description…"
                       mentions={mentions}
                       onBlur={(description) => update.mutate({ description })}
-                    />
+                    /> : task.description && <RichText html={task.description} />}
                   </div>
 
                   {/* subtasks */}
@@ -224,13 +235,13 @@ export function TaskModal({
                         </div>
                         </TaskContextMenu></SiblingDrag>
                       ))}
-                      <SubtaskComposer onSubmit={(name) => addSubtask.mutate(name)} />
+                      {canSetType && <SubtaskComposer onSubmit={(name) => addSubtask.mutate(name)} />}
                     </div>
                   </section>
 
                   <Checklists taskId={taskId} checklists={task.checklists} onChange={invalidate} />
 
-                  <Attachments taskId={taskId} attachments={task.attachments} onChange={invalidate} />
+                  <Attachments taskId={taskId} attachments={task.attachments} editable={canSetType} onChange={invalidate} />
 
                   <TimeTracking
                     taskId={taskId}
@@ -259,19 +270,21 @@ export function TaskModal({
                       members={workspace.members.map((m) => m.user)}
                       currentUserId={currentUser.id}
                       mentions={mentions}
+                      canComment={canComment}
                       onChange={invalidate}
                     />
 
-                    <CommentComposer
+                    {canComment && <CommentComposer
                       user={currentUser}
                       mentions={mentions}
                       onSubmit={async (body, files) => { await postComment(taskId, body, files); invalidate(); }}
-                    />
+                    />}
                   </section>
                 </div>
 
                 {/* sidebar */}
                 <aside className="w-full shrink-0 overflow-y-auto border-t border-cu-border bg-cu-sidebar/40 p-4 md:w-[320px] md:border-l md:border-t-0">
+                  <fieldset disabled={!canSetType} className="min-w-0">
                   <DetailRow icon={<UserGlyph />} label="Assignees">
                     <AssigneeControl
                       assignees={task.assignees.map((a) => a.user)}
@@ -327,7 +340,7 @@ export function TaskModal({
                   </DetailRow>
 
                   {/* custom fields */}
-                  {task.list.customFields.length > 0 && (
+                  {(task.list.customFields.length > 0 || task.additionalLists.some((list) => list.customFields.length)) && (
                     <div className="mt-4 border-t border-cu-border pt-4">
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-cu-text-tertiary">
                         Custom Fields
@@ -341,6 +354,15 @@ export function TaskModal({
                           />
                         </DetailRow>
                       ))}
+                      {task.additionalLists.flatMap((list) => list.customFields.map((f) => (
+                        <DetailRow key={f.id} icon={<Plus className="h-4 w-4 opacity-0" />} label={`${f.name} · ${list.name}`}>
+                          <CustomFieldControl
+                            field={f}
+                            value={task.customFieldValues.find((cv) => cv.customFieldId === f.id)?.value}
+                            onChange={(value) => setField.mutate({ fieldId: f.id, value })}
+                          />
+                        </DetailRow>
+                      )))}
                     </div>
                   )}
 
@@ -348,6 +370,7 @@ export function TaskModal({
                     {task.createdBy && <div>Created by {task.createdBy.name}</div>}
                     <div>{format(new Date(task.createdAt), "MMM d, yyyy")}</div>
                   </div>
+                  </fieldset>
                 </aside>
               </div>
             </>
@@ -509,6 +532,7 @@ function ActivityFeed({
   members,
   currentUserId,
   mentions,
+  canComment,
   onChange,
 }: {
   taskId: string;
@@ -518,6 +542,7 @@ function ActivityFeed({
   members: { id: string; name: string }[];
   currentUserId: string;
   mentions: { id: string; label: string }[];
+  canComment: boolean;
   onChange: () => void;
 }) {
   const statusName = (id: string) => statuses.find((s) => s.id === id)?.name;
@@ -557,6 +582,7 @@ function ActivityFeed({
             replies={repliesByParent.get(item.c.id) ?? []}
             currentUserId={currentUserId}
             mentions={mentions}
+            canComment={canComment}
             onChange={onChange}
           />
         ) : (
@@ -573,6 +599,7 @@ function CommentItem({
   replies = [],
   currentUserId,
   mentions,
+  canComment,
   onChange,
 }: {
   comment: TaskDetail["comments"][number];
@@ -580,6 +607,7 @@ function CommentItem({
   replies?: TaskDetail["comments"];
   currentUserId: string;
   mentions: { id: string; label: string }[];
+  canComment: boolean;
   onChange: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -617,7 +645,7 @@ function CommentItem({
               <Check className="h-3 w-3" /> Resolved
             </span>
           )}
-          {isOwn && !editing && (
+          {canComment && isOwn && !editing && (
             <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 onClick={() => {
@@ -639,7 +667,7 @@ function CommentItem({
             </span>
           )}
         </div>
-        {editing ? (
+        {canComment && editing ? (
           <div className="mt-1">
             <RichEditor content={comment.body} mentions={mentions} onChange={setHtml} />
             <div className="mt-1.5 flex gap-2">
@@ -670,7 +698,7 @@ function CommentItem({
                 ))}
               </ul>
             )}
-            <div className="flex items-center gap-2">
+            {canComment && <div className="flex items-center gap-2">
               <CommentReactions
                 commentId={comment.id}
                 reactions={comment.reactions}
@@ -693,7 +721,7 @@ function CommentItem({
                   <Check className="h-3 w-3" /> {comment.resolved ? "Reopen" : "Resolve"}
                 </button>
               )}
-            </div>
+            </div>}
 
             {replies.length > 0 && (
               <div className="mt-2 space-y-3 border-l-2 border-cu-border pl-3">
@@ -703,13 +731,14 @@ function CommentItem({
                     comment={r}
                     currentUserId={currentUserId}
                     mentions={mentions}
+                    canComment={canComment}
                     onChange={onChange}
                   />
                 ))}
               </div>
             )}
 
-            {replying && taskId && (
+            {canComment && replying && taskId && (
               <div className="mt-2 border-l-2 border-cu-border pl-3">
                 <CommentComposer user={comment.user} mentions={mentions} reply
                   onCancel={() => setReplying(false)}

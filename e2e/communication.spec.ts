@@ -52,7 +52,10 @@ test("delivers a comment mention with a private attachment and keeps the archive
     await thread.getByLabel("Attach files to reply").setInputFiles({
       name: "reply.txt", mimeType: "text/plain", buffer: Buffer.from("Reply notes"),
     });
+    const reply = teammate.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/api/tasks/${task.id}/comments`));
     await thread.locator("form").getByRole("button", { name: "Reply", exact: true }).click();
+    const posted = await reply;
+    expect(posted.status(), await posted.text()).toBe(201);
     await expect(thread.getByRole("link", { name: "reply.txt" })).toBeVisible();
     const senderInbox = await page.request.get("/api/notifications");
     expect((await senderInbox.json()).notifications).toEqual(expect.arrayContaining([

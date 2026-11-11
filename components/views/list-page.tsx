@@ -8,6 +8,9 @@ import {
   Calendar as CalendarIcon,
   ChartNoAxesGantt,
   Table2,
+  MapPin,
+  Network,
+  PanelTop,
   Plus,
   Search,
   Users,
@@ -17,13 +20,17 @@ import {
   SearchX,
 } from "lucide-react";
 import { isCompletedStatus } from "@/lib/task-status";
+import { availableGroupStatuses } from "@/lib/grouping";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ListTemplatesDialog } from "@/components/views/list-templates";
 import { TemplatePicker } from "@/components/views/template-picker";
-import { useList, useCreateTask, useToggleFavorite } from "@/lib/hooks";
+import { useList, useCreateTask, useToggleFavorite, useUpdateTask } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
 import { apiSend } from "@/lib/api";
+import { ViewRenderer } from "@/components/views/special-views";
+import { TaskContextMenu } from "@/components/task/task-context-menu";
+import { isSpecialView, VIEW_LABELS } from "@/lib/view-kind";
 import { ViewType } from "@/lib/enums";
 import { EMPTY_VIEW_STATE, applyViewState, type ViewState } from "@/lib/view-state";
 import { FilterMenu, SortMenu, GroupMenu } from "@/components/views/filter-sort";
@@ -40,7 +47,7 @@ import { AutomationDialog } from "@/components/views/automation-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ListWithMeta } from "@/lib/queries";
+import type { ListData, ListWithMeta } from "@/lib/queries";
 
 const VIEW_ICON: Record<ViewType, React.ReactNode> = {
   LIST: <ListIcon className="h-4 w-4" />,
@@ -48,6 +55,11 @@ const VIEW_ICON: Record<ViewType, React.ReactNode> = {
   CALENDAR: <CalendarIcon className="h-4 w-4" />,
   GANTT: <ChartNoAxesGantt className="h-4 w-4" />,
   TABLE: <Table2 className="h-4 w-4" />,
+  TIMELINE: <ChartNoAxesGantt className="h-4 w-4" />,
+  TEAM: <Users className="h-4 w-4" />,
+  MIND_MAP: <Network className="h-4 w-4" />,
+  MAP: <MapPin className="h-4 w-4" />,
+  EMBED: <PanelTop className="h-4 w-4" />,
 };
 
 function vsFromConfig(config: unknown): ViewState {
@@ -68,6 +80,8 @@ function vsFromConfig(config: unknown): ViewState {
       subtasks: c.subtasks ?? "collapsed",
       hideClosedSubtasks: c.hideClosedSubtasks ?? false,
       statusIds: Array.isArray(c.statusIds) ? c.statusIds : [],
+      embedUrl: c.embedUrl,
+      mindMap: c.mindMap,
     };
   }
   return EMPTY_VIEW_STATE;
@@ -76,6 +90,7 @@ function vsFromConfig(config: unknown): ViewState {
 export function ListPage({ listId }: { listId: string }) {
   const { data, isLoading, error } = useList(listId);
   const create = useCreateTask(listId);
+  const updateTask = useUpdateTask(listId);
   const { favorites, currentUser, workspace } = useWorkspace();
   const toggleFav = useToggleFavorite();
   const isFav = favorites.includes(listId);
@@ -111,7 +126,9 @@ export function ListPage({ listId }: { listId: string }) {
       ]);
     },
   });
-  const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const viewSaves = useRef(new Map<string, Promise<void>>());
+  const pendingConfigs = useRef(new Map<string, ViewState>());
+  const [saveErrorView, setSaveErrorView] = useState<string | null>(null);
 
   const views = data?.list.views ?? [];
   const activeView = views.find((v) => v.id === activeViewId) ?? views[0];
@@ -127,7 +144,7 @@ export function ListPage({ listId }: { listId: string }) {
 
   function selectView(view: { id: string; config: unknown }) {
     setActiveViewId(view.id);
-    setVs(vsFromConfig(view.config));
+    setVs(pendingConfigs.current.get(view.id) ?? vsFromConfig(view.config));
     const params = new URLSearchParams(window.location.search);
     if (params.has("view")) {
       params.set("view", view.id);
@@ -149,11 +166,27 @@ export function ListPage({ listId }: { listId: string }) {
   function updateVs(next: ViewState) {
     setVs(next);
     if (!activeViewId || !canWrite || (activeView?.privateOwnerId && activeView.privateOwnerId !== currentUser.id) || (activeView?.protected && !canManage)) return;
-    clearTimeout(saveTimers.current.get(activeViewId));
-    saveTimers.current.set(activeViewId, setTimeout(() => {
-      saveTimers.current.delete(activeViewId);
-      apiSend(`/api/views/${activeViewId}`, "PATCH", { config: next }).catch(() => {});
-    }, 500));
+    const id = activeViewId;
+    pendingConfigs.current.set(id, next);
+    const save = async () => {
+      try {
+        const saved = await apiSend<ListWithMeta["views"][number]>(`/api/views/${id}`, "PATCH", { config: next }, { keepalive: true });
+        client.setQueryData<ListData>(["list", listId], (current) => current && ({
+          ...current,
+          list: { ...current.list, views: current.list.views.map((view) => view.id === id ? { ...view, config: saved.config } : view) },
+        }));
+        setSaveErrorView((failed) => failed === id ? null : failed);
+        if (pendingConfigs.current.get(id) === next) pendingConfigs.current.delete(id);
+      } catch {
+        setSaveErrorView(id);
+      }
+    };
+    const previous = viewSaves.current.get(id);
+    const pending = previous ? previous.then(save) : save();
+    viewSaves.current.set(id, pending);
+    void pending.then(() => {
+      if (viewSaves.current.get(id) === pending) viewSaves.current.delete(id);
+    });
   }
 
   // open the task modal when navigated with ?task=ID (e.g. from command palette)
@@ -175,8 +208,8 @@ export function ListPage({ listId }: { listId: string }) {
     () => {
       if (!data) return data;
       const term = query.trim().toLocaleLowerCase();
-      const expandedRows = vs.subtasks === "expanded" && (activeView?.type === "TABLE" || activeView?.type === "GANTT");
-      const useAll = vs.subtasks === "separate" || expandedRows;
+      const expandedRows = vs.subtasks === "expanded" && (activeView?.type === "TABLE" || activeView?.type === "GANTT" || activeView?.type === "TIMELINE");
+      const useAll = vs.subtasks === "separate" || expandedRows || activeView?.type === "MIND_MAP";
       const source = useAll && activeView?.type !== "CALENDAR"
         ? data.allTasks.filter((task) => !vs.hideClosedSubtasks || !task.parentId || !isCompletedStatus(task.status.type))
         : data.tasks;
@@ -319,7 +352,7 @@ export function ListPage({ listId }: { listId: string }) {
                   <label className="grid gap-1">View name <input autoFocus required maxLength={80} value={viewName} onChange={(event) => setViewName(event.target.value)} className="rounded border border-cu-border bg-cu-bg p-1.5" /></label>
                   <label className="grid gap-1">View type
                     <select value={viewType} onChange={(event) => setViewType(event.target.value as ViewType)} className="rounded border border-cu-border bg-cu-bg p-1.5">
-                      {Object.values(ViewType).map((type) => <option key={type} value={type}>{type[0] + type.slice(1).toLowerCase()}</option>)}
+                      {Object.values(ViewType).map((type) => <option key={type} value={type}>{VIEW_LABELS[type]}</option>)}
                     </select>
                   </label>
                   <label className="flex gap-2"><input type="checkbox" checked={privateView} onChange={(event) => setPrivateView(event.target.checked)} /> Private view</label>
@@ -348,7 +381,7 @@ export function ListPage({ listId }: { listId: string }) {
           <Popover.Root>
             <Popover.Trigger asChild><button className="rounded px-2 py-1 text-xs hover:bg-cu-hover">Statuses{vs.statusIds?.length ? ` (${vs.statusIds.length})` : ""}</button></Popover.Trigger>
             <Popover.Portal><Popover.Content align="end" className="z-50 grid gap-2 rounded border border-cu-border bg-cu-panel p-3 text-xs shadow">
-              {list.statuses.map((status) => <label key={status.id} className="flex items-center gap-2">
+              {availableGroupStatuses(list.statuses, data.allTasks).map((status) => <label key={status.id} className="flex items-center gap-2">
                 <input type="checkbox" checked={vs.statusIds?.includes(status.id) ?? false} onChange={(event) => {
                   const ids = vs.statusIds ?? [];
                   updateVs({ ...vs, statusIds: event.target.checked ? [...ids, status.id] : ids.filter((id) => id !== status.id) });
@@ -361,6 +394,9 @@ export function ListPage({ listId }: { listId: string }) {
             </Popover.Content></Popover.Portal>
           </Popover.Root>
           {activeView?.protected && !canManage && <span className="text-xs text-cu-text-secondary">Filters apply for this session</span>}
+          {saveErrorView && saveErrorView === activeViewId && <span role="alert" className="text-xs text-cu-urgent">
+            View settings were not saved. <button type="button" onClick={() => updateVs(vs)} className="underline">Retry</button>
+          </span>}
           <GroupMenu state={vs} onChange={updateVs} />
           <FilterMenu state={vs} onChange={updateVs} tasks={data.tasks} />
           <SortMenu state={vs} onChange={updateVs} />
@@ -384,7 +420,7 @@ export function ListPage({ listId }: { listId: string }) {
       )}
 
       {/* active view */}
-      {activeView?.type !== "CALENDAR" && shownData && shownData.tasks.length === 0 ? (
+      {activeView?.type !== "CALENDAR" && activeView?.type !== "EMBED" && shownData && shownData.tasks.length === 0 ? (
         data.tasks.length === 0 ? (
           <EmptyState
             icon={<ClipboardList className="h-6 w-6" />}
@@ -413,6 +449,22 @@ export function ListPage({ listId }: { listId: string }) {
           {activeView?.type === "BOARD" && <BoardView expandSubtasks={vs.subtasks === "expanded"} hideClosedSubtasks={vs.hideClosedSubtasks} data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field} />}
           {activeView?.type === "CALENDAR" && <CalendarView statuses={list.statuses} listId={listId} tasks={applyViewState(data.allTasks, vs).filter((task) => !query.trim() || task.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))} onOpenTask={setOpenTaskId} canSchedule={canWrite && !list.archivedAt} />}
           {activeView?.type === "GANTT" && <GanttView data={shownData!} onOpenTask={setOpenTaskId} />}
+          {activeView && isSpecialView(activeView.type) && <div className="min-h-0 flex-1 overflow-auto p-4">
+            <ViewRenderer type={activeView.type} tasks={shownData!.tasks}
+              editable={canWrite && !list.archivedAt && (activeView.type !== "EMBED" || ((!activeView.protected || canManage) && (!activeView.privateOwnerId || activeView.privateOwnerId === currentUser.id)))}
+              embedUrl={vs.embedUrl} onEmbedChange={(embedUrl) => updateVs({ ...vs, embedUrl })}
+              mindMap={vs.mindMap} onMindMapChange={canWrite && !list.archivedAt && (!activeView.protected || canManage)
+                && (!activeView.privateOwnerId || activeView.privateOwnerId === currentUser.id) ? (mindMap) => updateVs({ ...vs, mindMap }) : undefined}
+              wrapTask={(task, element) => {
+                const fullTask = data.allTasks.find(({ id }) => id === task.id);
+                return fullTask ? <TaskContextMenu task={fullTask} statuses={list.statuses} onOpen={() => setOpenTaskId(task.id)}>
+                  <span>{element}</span>
+                </TaskContextMenu> : element;
+              }}
+              onOpen={(task) => setOpenTaskId(task.id)}
+              onDatesChange={(task, patch) => updateTask.mutate({ taskId: task.id, patch })} />
+            {updateTask.isError && <p role="alert" className="mt-2 text-sm text-cu-urgent">Could not update the task schedule.</p>}
+          </div>}
           {activeView?.type === "TABLE" && <TableView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
         </>
       )}

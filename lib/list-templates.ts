@@ -3,9 +3,12 @@ import { Prisma } from "@/lib/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { ApiError } from "@/lib/api-helpers";
 import { isCompletedStatus } from "@/lib/task-status";
+import { requireWorkspaceExport } from "@/lib/resource-permissions";
+import { createTaskTree } from "@/lib/create-task-tree";
 
-export async function snapshotList(workspaceId: string, listId: string, includeTasks: boolean) {
-  const list = await prisma.list.findFirst({
+export async function snapshotList(db: Prisma.TransactionClient, workspaceId: string, listId: string, includeTasks: boolean) {
+  await requireWorkspaceExport("list", listId, db);
+  const list = await db.list.findFirst({
     where: { id: listId, space: { workspaceId } },
     select: {
       color: true, icon: true,
@@ -19,16 +22,20 @@ export async function snapshotList(workspaceId: string, listId: string, includeT
     },
   });
   if (!list) throw new ApiError(404, "Source list not found");
-  const tasks = includeTasks ? await prisma.task.findMany({
-    where: { listId, archived: false, deletedAt: null },
+  const sharedTaskIds = includeTasks ? await db.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Task" WHERE "listId" = ${listId} AND NOT archived AND "deletedAt" IS NULL
+      AND oc_is_workspace_visible('task', id) LIMIT 1001
+  ` : [];
+  const tasks = sharedTaskIds.length ? await db.task.findMany({
+    where: { id: { in: sharedTaskIds.map(({ id }) => id) } },
     orderBy: [{ position: "asc" }, { id: "asc" }],
     take: 1001,
     select: {
       id: true, parentId: true, name: true, description: true, priority: true, milestone: true, statusId: true, position: true,
       startDate: true, dueDate: true, timeEstimate: true, recurrence: true,
-      blocking: { select: { blockedId: true } },
+      blocking: { where: { blockedId: { in: sharedTaskIds.map(({ id }) => id) } }, select: { blockedId: true } },
       checklists: { select: { name: true, position: true, items: { select: { name: true, position: true } } } },
-      customFieldValues: { select: { customFieldId: true, value: true } },
+      customFieldValues: { where: { field: { listId } }, select: { customFieldId: true, value: true } },
     },
   }) : [];
   if (tasks.length > 1000) throw new ApiError(400, "A list template can include up to 1,000 tasks");
@@ -91,15 +98,13 @@ export async function createListFromTemplate(input: {
     const tasks = input.includeTasks ? snapshot.tasks : [];
     const taskIds = new Map(tasks.map(({ id }) => [id, randomUUID()]));
     const statusTypes = new Map(snapshot.statuses.map(({ id, type }) => [id, type]));
-    if (tasks.length) await tx.task.createMany({
-      data: tasks.map(({ id, parentId, startDate, dueDate, statusId, name, description, priority, position, timeEstimate, recurrence, milestone }) => ({
+    await createTaskTree(tx, tasks.map(({ id, parentId, startDate, dueDate, statusId, name, description, priority, position, timeEstimate, recurrence, milestone }) => ({
         id: taskIds.get(id)!, listId: list.id, parentId: parentId ? taskIds.get(parentId) ?? null : null,
         statusId: statusIds.get(statusId) ?? statusIds.get(snapshot.statuses[0].id)!,
         name, description, priority, position, timeEstimate, recurrence, milestone, createdById: input.actorId,
         completedAt: isCompletedStatus(statusTypes.get(statusId) ?? "") ? new Date() : null,
         startDate: input.includeDates ? startDate : null, dueDate: input.includeDates ? dueDate : null,
-      })),
-    });
+    })));
     const dependencies = tasks.flatMap((task) => (task.blocking ?? []).flatMap(({ blockedId }) =>
       taskIds.has(blockedId) ? [{ blockerId: taskIds.get(task.id)!, blockedId: taskIds.get(blockedId)! }] : [],
     ));

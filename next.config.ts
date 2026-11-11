@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: __dirname,
   },
+  // Protected local files must be served by their authenticated routes.
+  images: { localPatterns: [] },
   // Keep Prisma client + pg out of the client bundle.
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg", "pg"],
   // Baseline security headers on every response.

@@ -17,10 +17,12 @@ function formatSize(bytes: number): string {
 export function Attachments({
   taskId,
   attachments,
+  editable = true,
   onChange,
 }: {
   taskId: string;
   attachments: Attachment[];
+  editable?: boolean;
   onChange: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -68,12 +70,12 @@ export function Attachments({
       {attachments.length > 0 && (
         <div className="mb-2 grid grid-cols-2 gap-2">
           {attachments.map((a) => (
-            <AttachmentCard key={a.id} attachment={a} onDelete={() => remove.mutate(a.id)} />
+            <AttachmentCard key={a.id} attachment={a} onDelete={editable ? () => remove.mutate(a.id) : undefined} />
           ))}
         </div>
       )}
 
-      <div
+      {editable && <div
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -103,19 +105,19 @@ export function Attachments({
             e.target.value = "";
           }}
         />
-      </div>
+      </div>}
       {error && <p className="mt-1.5 text-[12px] text-cu-urgent">{error}</p>}
     </section>
   );
 }
 
-function AttachmentCard({ attachment, onDelete }: { attachment: Attachment; onDelete: () => void }) {
+function AttachmentCard({ attachment, onDelete }: { attachment: Attachment; onDelete?: () => void }) {
   const isImage = attachment.mime.startsWith("image/");
   return (
     <div className="group relative flex items-center gap-2 overflow-hidden rounded-lg border border-cu-border bg-cu-panel p-2">
       {isImage ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={attachment.url} alt={attachment.name} className="h-10 w-10 shrink-0 rounded object-cover" />
+        <img src={`/api/attachments/${attachment.id}?preview=image`} alt={attachment.name} className="h-10 w-10 shrink-0 rounded object-cover" />
       ) : (
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-cu-hover-strong">
           <FileText className="h-5 w-5 text-cu-text-tertiary" />
@@ -123,7 +125,7 @@ function AttachmentCard({ attachment, onDelete }: { attachment: Attachment; onDe
       )}
       <div className="min-w-0 flex-1">
         <a
-          href={attachment.url}
+          href={`/api/attachments/${attachment.id}`}
           target="_blank"
           rel="noopener noreferrer"
           className="block truncate text-[12px] font-medium text-cu-text hover:text-cu-purple"
@@ -135,20 +137,20 @@ function AttachmentCard({ attachment, onDelete }: { attachment: Attachment; onDe
       </div>
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         <a
-          href={attachment.url}
+          href={`/api/attachments/${attachment.id}`}
           download={attachment.name}
           className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover hover:text-cu-text"
           title="Download"
         >
           <Download className="h-3.5 w-3.5" />
         </a>
-        <button
+        {onDelete && <button
           onClick={onDelete}
           className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover hover:text-cu-urgent"
           title="Delete"
         >
           <X className="h-3.5 w-3.5" />
-        </button>
+        </button>}
       </div>
     </div>
   );

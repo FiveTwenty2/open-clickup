@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { requirePublicLocation } from "@/lib/resource-permissions";
 import type { Prisma } from "@/lib/generated/prisma/client";
 
 type Context = { params: Promise<{ viewId: string }> };
@@ -50,9 +51,8 @@ export const PATCH = route(async (req, { params }: Context) => {
       await tx.viewReader.deleteMany({ where: { viewId } });
       if (userIds.length) await tx.viewReader.createMany({ data: userIds.map((userId) => ({ viewId, userId })) });
     } else if (action.action === "enable") {
-      if (view.privateOwnerId || (view.type !== "LIST" && view.type !== "TABLE")) {
-        throw new ApiError(400, "Public links are available for shared List and Table views");
-      }
+      if (view.privateOwnerId) throw new ApiError(400, "Choose a workspace view to create a public link");
+      await requirePublicLocation("list", view.listId, tx);
       await tx.viewPublicLink.upsert({
         where: { viewId }, update: {}, create: { viewId, key: randomBytes(24).toString("base64url") },
       });

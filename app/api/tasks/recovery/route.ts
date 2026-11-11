@@ -13,7 +13,7 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  const { workspaceId, user } = await requireIntegrationAccess(req, true);
+  const { workspaceId, user } = await requireIntegrationAccess(req, true, true);
   const { id } = await readJson(req, z.object({ id: z.string().min(1) }));
   await restoreTask(workspaceId, id, user.id);
   return NextResponse.json({ ok: true });

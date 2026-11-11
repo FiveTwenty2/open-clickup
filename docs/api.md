@@ -82,4 +82,19 @@ Tasks accept an optional boolean `milestone` when created or updated.
 - Set `private: true` when creating a list view to limit access to its creator. Owners and admins can use `protected: true` when patching a view to lock its saved settings. Each list retains at least one shared view.
 - `GET|POST|DELETE /api/tasks/:id/public-share` retrieves, enables, or revokes a public task summary link. `GET /api/public/tasks/:key` returns the limited summary for an active task and list.
 
-Private view owners can use `GET /api/views/:id/sharing` to list readers and `PATCH` with `{ "action": "readers", "userIds": [] }` to replace read access. Workspace owners and admins can enable or revoke a public summary of a shared List or Table view through the same endpoint with `{ "action": "enable" }` or `{ "action": "revoke" }`. The public endpoint `GET /api/public/views/:key` uses the saved filters and excludes comments, descriptions, and assignee details.
+Private view owners can use `GET /api/views/:id/sharing` to list readers and `PATCH` with `{ "action": "readers", "userIds": [] }` to replace read access. Workspace owners and admins can enable or revoke a public summary of a shared view through the same endpoint with `{ "action": "enable" }` or `{ "action": "revoke" }`. The public endpoint `GET /api/public/views/:key` uses the saved filters and excludes comments, descriptions, and assignee details.
+
+## Task placements and status workflows
+
+- `GET /api/tasks/:id/lists` returns the task's additional list placements. Send `{ "listId": "..." }` with `POST` to add a placement or `DELETE` to remove one. The task keeps its ID and home list.
+- `GET /api/status-workflows/:kind/:id` returns the effective workflow and its source. Use `space`, `folder`, or `list` for `kind`. `PUT` accepts `{ "workflow": [...] }` to set an override or `{ "workflow": null }` to return to inheritance. Workflow entries have `key`, `name`, `color`, `type`, and optional `wipLimit`.
+
+## Hierarchy sharing and saved views
+
+These endpoints use the signed-in browser session.
+
+- `GET /api/access/:kind/:id` returns access information for a `space`, `folder`, `list`, or `task`. With full access, `PATCH` accepts `private` and a replacement `grants` array. Each entry contains `subjectType` (`person` or `team`), `subjectId`, and `permission` (`VIEW`, `COMMENT`, `EDIT`, or `FULL`). Ancestor restrictions apply to the task and its files.
+- Workspace admins manage teams with `POST`, `PATCH`, or `DELETE /api/workspace/access-teams`. To create a team, send `name` and `userIds`. Include `id` when updating or deleting.
+- `GET /api/scoped-views` returns workspace views and task data. Pass `spaceId` or `folderId` to narrow the location. Use `POST` with `name`, `type`, and an optional location to add a view, then `PATCH /api/scoped-views/:id` to save its settings. Sharing actions use `/api/scoped-views/:id/sharing`.
+- `POST /api/tasks/bulk` accepts up to 500 task IDs. To change status across home lists, send `patch.status` with a `name` and `type` present in every selected task's home workflow. Use `patch.statusId` for a list-specific status.
+- `PATCH /api/tasks/:taskId/map-location` accepts numeric `latitude` and `longitude` in degrees. Send both as `null` to remove the location. This endpoint also accepts an API token with task write access.

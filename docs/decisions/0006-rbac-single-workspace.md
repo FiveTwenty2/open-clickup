@@ -14,7 +14,7 @@ would add a lot of plumbing for no current benefit.
 - `lib/permissions.ts` defines a role rank (`GUEST < MEMBER < ADMIN < OWNER`) and
   `requireRole(min)`, which resolves the current user's (single) workspace
   membership and throws 401/403 as appropriate.
-- Policy: task & content writes require `MEMBER` (guests are read-only); space and
+- Default policy: task & content writes require `MEMBER`; space and
   workspace management require `ADMIN`. Reads require authentication.
 - **Every mutating route** must call `requireRole(...)` (or `requireUser()` for
   self/read routes).
