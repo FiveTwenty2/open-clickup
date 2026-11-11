@@ -16,7 +16,8 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const url = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      const body = mode === "login" ? { email, password } : { name, email, password };
+      const invite = new URLSearchParams(window.location.search).get("invite") || undefined;
+      const body = mode === "login" ? { email, password, invite } : { name, email, password, invite };
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

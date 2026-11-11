@@ -18,6 +18,12 @@ $workspace.workspace.spaces | Select-Object name, lists, folders
 | GET | `/api/search?q=release` | Search for task and list names |
 | GET | `/api/lists/{listId}` | Tasks, subtasks, statuses, views and custom field definitions |
 | GET | `/api/tasks/{taskId}` | Task details, comments and checklists |
+| GET | `/api/workspace/tasks?q=release&status=open` | Paginated tasks across lists |
+| GET | `/api/dashboard` | Workspace counts, due work and tracked time |
+| GET | `/api/lists/{listId}/csv` | Export active tasks and subtasks as CSV |
+| POST | `/api/lists/{listId}/csv` | Validate or import up to 500 task rows |
+| GET | `/api/tasks/recovery?mode=trash` | List recoverable tasks or use `mode=archive` |
+| POST | `/api/tasks/recovery` | Restore an archived or trashed task by ID |
 | POST | `/api/tasks` | Create a task or subtask |
 | PATCH | `/api/tasks/{taskId}` | Edit a task, including its status and assignees |
 
@@ -33,3 +39,5 @@ Invoke-RestMethod "$base/api/tasks/$($task.id)" -Method Patch -Headers $headers 
 ```
 
 Get `$listId` from the workspace response and `$closedStatusId` from that list's statuses. Add `parentId` to the create request to create a subtask. A token has the permissions of its owner within its workspace. A read-only token cannot write, and tokens cannot delete tasks or manage other tokens. Error responses use JSON with an `error` field. Expect 401 for an invalid, expired or revoked token, 403 for insufficient permissions, and 404 for an unavailable resource.
+
+CSV import accepts `{ "csv": "...", "preview": true }`. Use `preview: false` to write once the returned `errors` array is empty. A file must contain `Task Name` (or `Name`). Optional fields are `Task ID`, `Parent Task ID`, `Status`, `Priority`, `Assignees`, `Start Date`, `Due Date` and `Description`. Parent IDs must refer to rows in the same file. Use ISO dates and assignee emails. A failed validation writes no tasks.

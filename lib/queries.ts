@@ -19,14 +19,14 @@ export const taskInclude = {
   tags: { include: { tag: true } },
   customFieldValues: true,
   subtasks: {
-    where: { archived: false },
+    where: { archived: false, deletedAt: null },
     orderBy: { position: "asc" },
     include: {
       status: true,
       assignees: { include: { user: { select: userSelect } } },
     },
   },
-  _count: { select: { comments: true, subtasks: true, checklists: true } },
+  _count: { select: { comments: true, subtasks: { where: { archived: false, deletedAt: null } }, checklists: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskWithRelations = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -50,14 +50,14 @@ export async function getWorkspaceTree(workspaceId: string) {
             include: {
               lists: {
                 orderBy: { position: "asc" },
-                include: { _count: { select: { tasks: true } } },
+                include: { _count: { select: { tasks: { where: { archived: false, deletedAt: null, parentId: null } } } } },
               },
             },
           },
           lists: {
             where: { folderId: null },
             orderBy: { position: "asc" },
-            include: { _count: { select: { tasks: true } } },
+            include: { _count: { select: { tasks: { where: { archived: false, deletedAt: null, parentId: null } } } } },
           },
         },
       },
@@ -92,7 +92,7 @@ export async function getListData(listId: string) {
   if (!list) return null;
 
   const tasks = await prisma.task.findMany({
-    where: { listId, parentId: null, archived: false },
+    where: { listId, parentId: null, archived: false, deletedAt: null },
     orderBy: { position: "asc" },
     include: taskInclude,
   });

@@ -25,7 +25,8 @@ import { Plus, MessageSquare, GitBranch, ChevronsLeftRight, ChevronsRightLeft, G
 import { cn, midpoint } from "@/lib/utils";
 import { apiSend } from "@/lib/api";
 import type { ListData, TaskWithRelations, StatusModel } from "@/lib/queries";
-import { useUpdateTask, useCreateTask } from "@/lib/hooks";
+import { useUpdateTask, useCreateTask, useBulk } from "@/lib/hooks";
+import { BulkBar } from "@/components/views/bulk-bar";
 import { useWorkspace } from "@/components/workspace-context";
 import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
@@ -55,6 +56,17 @@ export function BoardView({
   const { workspace } = useWorkspace();
   const members = useMemo(() => workspace.members.map((m) => m.user), [workspace.members]);
   const update = useUpdateTask(list.id);
+  const bulk = useBulk(list.id);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedIds = tasks.filter((task) => selected.has(task.id)).map((task) => task.id);
+  function toggleTask(taskId: string) {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
 
   const groups = useMemo(
     () => groupTasks(tasks, groupBy, { statuses, members }),
@@ -175,6 +187,8 @@ export function BoardView({
                 firstStatusId={firstStatusId}
                 status={groupBy === "status" ? statusById.get(group.id) : undefined}
                 statuses={statuses}
+                selected={selected}
+                onToggleTask={toggleTask}
                 onOpenTask={onOpenTask}
                 onCollapse={() => toggleCollapse(group.id)}
               />
@@ -183,6 +197,17 @@ export function BoardView({
         </div>
         <DragOverlay>{activeTask ? <Card task={activeTask} overlay /> : null}</DragOverlay>
       </DndContext>
+      {selectedIds.length > 0 && <BulkBar
+        count={selectedIds.length}
+        statuses={statuses}
+        onSetStatus={(statusId) => bulk.mutate({ ids: selectedIds, patch: { statusId } })}
+        onSetPriority={(priority) => bulk.mutate({ ids: selectedIds, patch: { priority } })}
+        onSetAssignees={(assigneeIds) => bulk.mutate({ ids: selectedIds, patch: { assigneeIds } })}
+        onDueDate={(dueDate) => bulk.mutate({ ids: selectedIds, patch: { dueDate } })}
+        onArchive={() => bulk.mutate({ ids: selectedIds, patch: { archived: true } }, { onSuccess: () => setSelected(new Set()) })}
+        onDelete={() => bulk.mutate({ ids: selectedIds, delete: true }, { onSuccess: () => setSelected(new Set()) })}
+        onClear={() => setSelected(new Set())}
+      />}
     </div>
   );
 }
@@ -210,6 +235,8 @@ function Column({
   firstStatusId,
   status,
   statuses,
+  selected,
+  onToggleTask,
   onOpenTask,
   onCollapse,
 }: {
@@ -219,6 +246,8 @@ function Column({
   firstStatusId: string | undefined;
   status: StatusModel | undefined;
   statuses: StatusModel[];
+  selected: Set<string>;
+  onToggleTask: (taskId: string) => void;
   onOpenTask: (id: string) => void;
   onCollapse: () => void;
 }) {
@@ -270,7 +299,7 @@ function Column({
           )}
         >
           {tasks.map((task) => (
-            <SortableCard key={task.id} task={task} statuses={statuses} onOpenTask={onOpenTask} />
+            <SortableCard key={task.id} task={task} statuses={statuses} selected={selected.has(task.id)} onToggle={() => onToggleTask(task.id)} onOpenTask={onOpenTask} />
           ))}
         </div>
       </SortableContext>
@@ -372,7 +401,7 @@ function WipEditor({ status, listId }: { status: StatusModel; listId: string }) 
   );
 }
 
-function SortableCard({ task, statuses, onOpenTask }: { task: TaskWithRelations; statuses: StatusModel[]; onOpenTask: (id: string) => void }) {
+function SortableCard({ task, statuses, selected, onToggle, onOpenTask }: { task: TaskWithRelations; statuses: StatusModel[]; selected: boolean; onToggle: () => void; onOpenTask: (id: string) => void }) {
   const update = useUpdateTask(task.listId);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
@@ -383,11 +412,15 @@ function SortableCard({ task, statuses, onOpenTask }: { task: TaskWithRelations;
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(isDragging && "opacity-40")}
+      className={cn("group relative rounded-lg", isDragging && "opacity-40", selected && "ring-2 ring-cu-purple")}
       {...attributes}
       {...listeners}
       onClick={() => onOpenTask(task.id)}
     >
+      <input type="checkbox" aria-label={`Select ${task.name}`} checked={selected} onChange={onToggle}
+        onClick={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}
+        className={cn("absolute right-2 top-2 z-10 h-4 w-4 cursor-pointer accent-cu-purple", !selected && "opacity-0 focus:opacity-100 group-hover:opacity-100")}
+      />
       <Card task={task} statusControl={
         <span onPointerDown={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
           <StatusControl current={task.status} statuses={statuses} taskName={task.name} onChange={(statusId) => update.mutate({ taskId: task.id, patch: { statusId } })} />

@@ -7,18 +7,22 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Ellipsis, BookmarkPlus, Check, Copy, FolderInput } from "lucide-react";
 import { apiSend } from "@/lib/api";
-import { useSaveTemplate, useDuplicateTask } from "@/lib/hooks";
+import { useSaveTemplate, useDuplicateTask, useUpdateTask, useDeleteTask } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
 
 export function TaskMenu({
   taskId,
   defaultName,
   listId,
+  archived,
+  onClose,
   onOpenTask,
 }: {
   taskId: string;
   defaultName: string;
   listId: string;
+  archived: boolean;
+  onClose: () => void;
   onOpenTask?: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -26,6 +30,8 @@ export function TaskMenu({
   const [saved, setSaved] = useState(false);
   const save = useSaveTemplate();
   const duplicate = useDuplicateTask(listId);
+  const update = useUpdateTask(listId);
+  const trash = useDeleteTask(listId);
   const router = useRouter();
   const { workspace } = useWorkspace();
   const otherLists = workspace.spaces
@@ -106,6 +112,15 @@ export function TaskMenu({
             >
               <BookmarkPlus className="h-4 w-4" /> Save as template
             </DropdownMenu.Item>
+            <DropdownMenu.Separator className="my-1 border-t border-cu-border" />
+            <DropdownMenu.Item
+              className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover"
+              onSelect={() => update.mutate({ taskId, patch: { archived: !archived } }, { onSuccess: () => { if (!archived) onClose(); } })}
+            >{archived ? "Unarchive task" : "Archive task"}</DropdownMenu.Item>
+            <DropdownMenu.Item
+              className="cursor-pointer rounded px-2 py-1.5 text-[13px] text-cu-urgent outline-none focus:bg-cu-hover"
+              onSelect={() => trash.mutate(taskId, { onSuccess: onClose })}
+            >Move to Trash</DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

@@ -5,11 +5,14 @@ import { hashPassword, createSession } from "@/lib/auth";
 import { colorFromString } from "@/lib/utils";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { consumeInvite } from "@/lib/workspace-invites";
+import { publish } from "@/lib/events";
 
 const schema = z.object({
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(256),
+  invite: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
 });
 
 export const POST = route(async (req) => {
@@ -20,23 +23,27 @@ export const POST = route(async (req) => {
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
     );
   }
-  const { name, email, password } = await readJson(req, schema);
-
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) throw new ApiError(409, "An account with that email already exists");
-
-  const user = await prisma.user.create({
-    data: { name, email, passwordHash: hashPassword(password), color: colorFromString(email) },
+  const { name, email, password, invite } = await readJson(req, schema);
+  const passwordHash = hashPassword(password);
+  const user = await prisma.$transaction(async (tx) => {
+    if (!invite) {
+      await tx.$queryRaw`SELECT 1 AS acquired FROM pg_advisory_xact_lock(490014491)`;
+      if (await tx.workspace.count()) throw new ApiError(403, "Ask a workspace administrator for an invitation");
+    }
+    const existing = await tx.user.findUnique({ where: { email }, select: { id: true } });
+    if (existing) throw new ApiError(409, "This email already has an account. Sign in to accept an invitation.");
+    const account = await tx.user.create({
+      data: { name, email, passwordHash, color: colorFromString(email) },
+      select: { id: true, name: true, email: true },
+    });
+    if (invite) await consumeInvite(tx, invite, email, account.id);
+    else await tx.workspace.create({
+      data: { name: "My Workspace", members: { create: { userId: account.id, role: "OWNER" } } },
+    });
+    return account;
   });
 
-  // add to the (first) workspace as a member so they land in a populated app
-  const workspace = await prisma.workspace.findFirst({ orderBy: { createdAt: "asc" } });
-  if (workspace) {
-    await prisma.workspaceMember.create({
-      data: { workspaceId: workspace.id, userId: user.id, role: "MEMBER" },
-    });
-  }
-
   await createSession(user.id);
+  publish({ type: "bootstrap" });
   return NextResponse.json({ id: user.id, name: user.name, email: user.email }, { status: 201 });
 });

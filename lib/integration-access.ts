@@ -45,7 +45,7 @@ export async function requireListInWorkspace(listId: string, workspaceId: string
 
 export async function requireTaskInWorkspace(taskId: string, workspaceId: string) {
   const task = await prisma.task.findFirst({
-    where: { id: taskId, list: { space: { workspaceId } } },
+    where: { id: taskId, deletedAt: null, list: { space: { workspaceId } } },
     select: { listId: true, list: { select: { spaceId: true } } },
   });
   if (!task) throw new ApiError(404, "Task not found");

@@ -47,6 +47,14 @@ Hierarchy, five views, custom fields, real-time collaboration and dark mode — 
 
 **API access** — create and revoke personal tokens from the profile menu. See [the API guide](docs/api.md) for supported requests and examples.
 
+**Workspace tools** — All tasks gives you a shareable cross-list search with status, assignee, due date and list filters. Dashboards shows list progress, upcoming work and a downloadable time report. Use Docs for shared notes and Goals for numeric targets or progress linked to tasks.
+
+**Task recovery** — Archive hides a task from active lists. Trash preserves the deleted task and its subtask tree for restoration. Find both in **Archive and Trash** in the sidebar. Board, List and Table support bulk status, priority, assignment, due date, archive and Trash actions.
+
+**List tools** — import tasks and subtasks from CSV with validation before writing, export an active list, and rename, duplicate or remove views. List owners and admins can set up simple rules that act when a task is created or enters a status.
+
+**Workspace members** — the first account on an empty database creates the workspace and becomes its owner. After that, owners and admins share email-specific invitation links from **Workspace members**. Guest accounts can read the workspace and cannot edit tasks.
+
 **Productivity** — filter / sort / **group-by** (status · assignee · priority) on every view, a **⌘K command palette**, keyboard shortcuts, **multi-select + bulk actions**, **task templates**, **favorites**, a "My Work" home, a status-workflow editor, **dark mode**, and a mobile-responsive layout.
 
 **Built to run in production** — email/password **auth with server-side sessions** (scrypt-hashed), **role-based permissions**, a fully **Zod-validated** API, security headers + auth rate limiting, a `/api/health` probe, a one-command **Docker** self-host, and unit + e2e tests in CI.

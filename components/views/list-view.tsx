@@ -200,6 +200,8 @@ export function ListView({
           onSetStatus={(statusId) => bulk.mutate({ ids: [...selected], patch: { statusId } })}
           onSetPriority={(priority) => bulk.mutate({ ids: [...selected], patch: { priority } })}
           onSetAssignees={(assigneeIds) => bulk.mutate({ ids: [...selected], patch: { assigneeIds } })}
+          onDueDate={(dueDate) => bulk.mutate({ ids: [...selected], patch: { dueDate } })}
+          onArchive={() => { bulk.mutate({ ids: [...selected], patch: { archived: true } }); clearSelect(); }}
           onDelete={() => { bulk.mutate({ ids: [...selected], delete: true }); clearSelect(); }}
           onClear={clearSelect}
         />
@@ -546,7 +548,7 @@ function TaskRow({
                 <RowMenuItem icon={<Maximize2 className="h-4 w-4" />} label="Open" onSelect={() => onOpenTask(task.id)} />
                 <RowMenuItem icon={<Pencil className="h-4 w-4" />} label="Rename" onSelect={() => setRenaming(true)} />
                 <RowMenuItem icon={<Copy className="h-4 w-4" />} label="Duplicate" onSelect={() => duplicate.mutate(task.id)} />
-                <RowMenuItem icon={<Trash2 className="h-4 w-4" />} label="Delete" danger onSelect={() => del.mutate(task.id)} />
+                <RowMenuItem icon={<Trash2 className="h-4 w-4" />} label="Move to Trash" danger onSelect={() => del.mutate(task.id)} />
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>

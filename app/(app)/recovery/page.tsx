@@ -1,0 +1,58 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiSend } from "@/lib/api";
+import type { getRecoveryTasks } from "@/lib/task-recovery";
+import { useWorkspace } from "@/components/workspace-context";
+
+const button = "rounded border border-cu-border px-3 py-1.5 text-sm hover:bg-cu-hover disabled:opacity-50";
+
+export default function RecoveryPage() {
+  const [mode, setMode] = useState<"archive" | "trash">("archive");
+  const [page, setPage] = useState(0);
+  const { workspace, currentUser } = useWorkspace();
+  const canRestore = workspace.members.find((member) => member.userId === currentUser.id)?.role !== "GUEST";
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ["recovery", mode, page],
+    queryFn: () => apiGet<Awaited<ReturnType<typeof getRecoveryTasks>>>(`/api/tasks/recovery?mode=${mode}&page=${page}`),
+  });
+  const restore = useMutation({
+    mutationFn: (id: string) => apiSend("/api/tasks/recovery", "POST", { id }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["recovery"] }),
+  });
+
+  return (
+    <main className="flex-1 overflow-auto p-5 sm:p-8">
+      <h1 className="text-xl font-semibold">Archive and Trash</h1>
+      <div className="my-4 flex gap-2" aria-label="Recovery categories">
+        {(["archive", "trash"] as const).map((category) => (
+          <button key={category} className={button + " aria-pressed:border-cu-purple aria-pressed:text-cu-purple"} aria-pressed={mode === category} onClick={() => { setMode(category); setPage(0); restore.reset(); }}>
+            {category === "archive" ? "Archive" : "Trash"}
+          </button>
+        ))}
+      </div>
+      {query.isPending && <p>Loading tasks…</p>}
+      {query.isError && <p role="alert">Could not load tasks.</p>}
+      {restore.isError && <p role="alert">Could not restore this task. Restore its parent first if needed.</p>}
+      {query.data?.tasks.length === 0 && <p className="text-sm text-cu-text-secondary">{mode === "archive" ? "No archived tasks." : "Trash is empty."}</p>}
+      <ul className="divide-y divide-cu-border">
+        {query.data?.tasks.map((task) => (
+          <li key={task.id} className="flex items-center justify-between gap-3 py-3">
+            <div className="min-w-0">
+              {mode === "archive" ? <Link href={`/l/${task.listId}?task=${task.id}`} className="font-medium hover:underline">{task.name}</Link> : <span className="font-medium">{task.name}</span>}
+              <p className="text-sm text-cu-text-secondary">{task.list.space.name} / {task.list.name} · {task.status.name}</p>
+            </div>
+            {canRestore && <button className={button} disabled={restore.isPending} onClick={() => restore.mutate(task.id)} aria-label={`Restore ${task.name}`}>{mode === "archive" ? "Unarchive" : "Restore"}</button>}
+          </li>
+        ))}
+      </ul>
+      {(page > 0 || query.data?.hasNext) && <div className="mt-4 flex gap-2">
+        <button className={button} disabled={!page} onClick={() => setPage(page - 1)}>Previous</button>
+        <button className={button} disabled={!query.data?.hasNext} onClick={() => setPage(page + 1)}>Next</button>
+      </div>}
+    </main>
+  );
+}

@@ -32,6 +32,9 @@ import { GanttView } from "@/components/views/gantt-view";
 import { TableView } from "@/components/views/table-view";
 import { TaskModal } from "@/components/task/task-modal";
 import { StatusManager } from "@/components/status/status-manager";
+import { CsvImportDialog } from "@/components/views/csv-import-dialog";
+import { ViewOptions } from "@/components/views/view-options";
+import { AutomationDialog } from "@/components/views/automation-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -54,6 +57,9 @@ function vsFromConfig(config: unknown): ViewState {
         assignees: c.filters?.assignees ?? [],
         tags: c.filters?.tags ?? [],
         completion: c.filters?.completion ?? "all",
+        due: c.filters?.due ?? "all",
+        assignment: c.filters?.assignment ?? "all",
+        recurrence: c.filters?.recurrence ?? "all",
       },
       sort: { field: c.sort?.field ?? null, dir: c.sort?.dir ?? "asc" },
       groupBy: c.groupBy ?? "status",
@@ -76,6 +82,8 @@ export function ListPage({ listId }: { listId: string }) {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [statusMgr, setStatusMgr] = useState(false);
   const [templatePicker, setTemplatePicker] = useState(false);
+  const [csvImport, setCsvImport] = useState(false);
+  const [automations, setAutomations] = useState(false);
   const [vs, setVs] = useState<ViewState>(EMPTY_VIEW_STATE);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -83,7 +91,7 @@ export function ListPage({ listId }: { listId: string }) {
   const [viewName, setViewName] = useState("");
   const [viewType, setViewType] = useState<ViewType>("LIST");
   const client = useQueryClient();
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const views = data?.list.views ?? [];
   const activeView = views.find((v) => v.id === activeViewId) ?? views[0];
@@ -114,10 +122,11 @@ export function ListPage({ listId }: { listId: string }) {
   function updateVs(next: ViewState) {
     setVs(next);
     if (!activeViewId) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
+    clearTimeout(saveTimers.current.get(activeViewId));
+    saveTimers.current.set(activeViewId, setTimeout(() => {
+      saveTimers.current.delete(activeViewId);
       apiSend(`/api/views/${activeViewId}`, "PATCH", { config: next }).catch(() => {});
-    }, 500);
+    }, 500));
   }
 
   // open the task modal when navigated with ?task=ID (e.g. from command palette)
@@ -196,7 +205,7 @@ export function ListPage({ listId }: { listId: string }) {
         </button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
-            <button className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover">
+            <button aria-label="List actions" className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover">
               <Ellipsis className="h-4 w-4" />
             </button>
           </DropdownMenu.Trigger>
@@ -217,6 +226,11 @@ export function ListPage({ listId }: { listId: string }) {
                 className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover"
               >
                 New from template
+              </DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => setCsvImport(true)} className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">Import CSV</DropdownMenu.Item>
+              <DropdownMenu.Item onSelect={() => setAutomations(true)} className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">List automations</DropdownMenu.Item>
+              <DropdownMenu.Item asChild className="cursor-pointer rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover">
+                <a href={`/api/lists/${listId}/csv`} download>Export CSV</a>
               </DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -241,6 +255,10 @@ export function ListPage({ listId }: { listId: string }) {
               {v.name}
             </button>
           ))}
+          {activeView && <ViewOptions key={activeView.id} view={activeView} allowDelete={views.length > 1} selectView={(view) => {
+            if (view) selectView(view);
+            else setActiveViewId(null);
+          }} />}
           <Popover.Root open={addingView} onOpenChange={setAddingView}>
             <Popover.Trigger asChild>
               <button className="flex items-center gap-1 px-2 py-2 text-[13px] text-cu-text-tertiary hover:text-cu-text" aria-label="Add view">
@@ -267,7 +285,7 @@ export function ListPage({ listId }: { listId: string }) {
         <div className="flex items-center gap-1 text-cu-text-secondary">
           <button
             aria-pressed={vs.filters.assignees.length === 1 && vs.filters.assignees[0] === currentUser.id}
-            onClick={() => updateVs({ ...vs, filters: { ...vs.filters, assignees: vs.filters.assignees.length === 1 && vs.filters.assignees[0] === currentUser.id ? [] : [currentUser.id] } })}
+            onClick={() => updateVs({ ...vs, filters: { ...vs.filters, assignment: "all", assignees: vs.filters.assignees.length === 1 && vs.filters.assignees[0] === currentUser.id ? [] : [currentUser.id] } })}
             className="flex items-center gap-1.5 rounded px-2 py-1.5 text-[13px] hover:bg-cu-hover aria-pressed:text-cu-purple"
           >
             <Users className="h-4 w-4" /> <span className="hidden sm:inline">Assigned to me</span>
@@ -339,6 +357,8 @@ export function ListPage({ listId }: { listId: string }) {
           onCreated={(taskId) => setOpenTaskId(taskId)}
         />
       )}
+      {csvImport && <CsvImportDialog listId={listId} onClose={() => setCsvImport(false)} />}
+      {automations && <AutomationDialog listId={listId} statuses={list.statuses} onClose={() => setAutomations(false)} />}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
+import { requireTaskInWorkspace } from "@/lib/integration-access";
 import { userSelect } from "@/lib/queries";
 import { readJson, route } from "@/lib/api-helpers";
 import { extractMentionIds, createNotifications } from "@/lib/notifications";
@@ -16,7 +17,8 @@ const schema = z.object({
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
   const { body, parentId } = await readJson(req, schema);
-  const { user } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("MEMBER");
+  await requireTaskInWorkspace(taskId, workspaceId);
   const comment = await prisma.comment.create({
     data: { taskId, userId: user.id, body, parentId: parentId ?? null },
     include: { user: { select: userSelect }, reactions: true },

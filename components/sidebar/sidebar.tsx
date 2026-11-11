@@ -23,6 +23,8 @@ import {
   FolderPlus,
   LogOut,
   Star,
+  FileText,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiSend } from "@/lib/api";
@@ -50,7 +52,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
     <aside className="flex h-full w-[var(--sidebar-w,260px)] shrink-0 flex-col border-r border-cu-border bg-cu-sidebar text-cu-text">
       {/* Workspace header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <button className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 hover:bg-cu-hover-strong">
+        <button aria-label="Workspace members" onClick={() => router.push("/workspace")} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 hover:bg-cu-hover-strong">
           <span
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white"
             style={{ backgroundColor: workspace.color }}
@@ -90,7 +92,11 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           onClick={() => router.push("/home")}
         />
         <InboxButton />
-        <NavItem icon={<LayoutGrid className="h-4 w-4" />} label="Dashboards" />
+        <NavItem icon={<ListIcon className="h-4 w-4" />} label="All tasks" active={pathname === "/tasks"} onClick={() => router.push("/tasks")} />
+        <NavItem icon={<LayoutGrid className="h-4 w-4" />} label="Dashboards" active={pathname === "/dashboards"} onClick={() => router.push("/dashboards")} />
+        <NavItem icon={<FileText className="h-4 w-4" />} label="Docs" active={pathname === "/docs"} onClick={() => router.push("/docs")} />
+        <NavItem icon={<Target className="h-4 w-4" />} label="Goals" active={pathname === "/goals"} onClick={() => router.push("/goals")} />
+        <NavItem icon={<Trash2 className="h-4 w-4" />} label="Archive and Trash" active={pathname === "/recovery"} onClick={() => router.push("/recovery")} />
       </nav>
 
       {favLists.length > 0 && (
@@ -150,7 +156,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           <button className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover-strong hover:text-cu-text">
             <Bell className="h-4 w-4" />
           </button>
-          <button className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover-strong hover:text-cu-text">
+          <button aria-label="Open workspace settings" onClick={() => router.push("/workspace")} className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover-strong hover:text-cu-text">
             <Settings className="h-4 w-4" />
           </button>
         </div>

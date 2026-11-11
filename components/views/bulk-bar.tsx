@@ -17,6 +17,8 @@ export function BulkBar({
   onSetPriority,
   onSetAssignees,
   onDelete,
+  onArchive,
+  onDueDate,
   onClear,
 }: {
   count: number;
@@ -25,6 +27,8 @@ export function BulkBar({
   onSetPriority: (p: Priority | null) => void;
   onSetAssignees: (ids: string[]) => void;
   onDelete: () => void;
+  onArchive?: () => void;
+  onDueDate?: (date: string | null) => void;
   onClear: () => void;
 }) {
   const { workspace } = useWorkspace();
@@ -65,12 +69,24 @@ export function BulkBar({
         <BarMenu label="Assign">
           <AssignPicker members={members} onApply={onSetAssignees} />
         </BarMenu>
+        {onDueDate && <BarMenu label="Due date">
+          {[["Today", 0], ["Tomorrow", 1], ["In a week", 7]].map(([label, offset]) => (
+            <Item key={label} onSelect={() => {
+              const date = new Date();
+              date.setDate(date.getDate() + Number(offset));
+              date.setHours(12, 0, 0, 0);
+              onDueDate(date.toISOString());
+            }}>{label}</Item>
+          ))}
+          <Item onSelect={() => onDueDate(null)}>Clear due date</Item>
+        </BarMenu>}
+        {onArchive && <button onClick={onArchive} className="rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-white/10">Archive</button>}
 
         <button
           onClick={onDelete}
           className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] hover:bg-white/10"
         >
-          <Trash2 className="h-4 w-4" /> Delete
+          <Trash2 className="h-4 w-4" /> Trash
         </button>
 
         <span className="mx-1 h-5 w-px bg-white/20" />

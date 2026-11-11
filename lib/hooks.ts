@@ -54,8 +54,17 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["list", event.listId] });
           qc.invalidateQueries({ queryKey: ["task"] });
           qc.invalidateQueries({ queryKey: ["my-tasks"] });
+          qc.invalidateQueries({ queryKey: ["recovery"] });
+          qc.invalidateQueries({ queryKey: ["dashboard"] });
+          qc.invalidateQueries({ queryKey: ["workspace-tasks"] });
+          qc.invalidateQueries({ queryKey: ["goals"] });
         } else if (event.type === "bootstrap") {
           qc.invalidateQueries({ queryKey: ["bootstrap"] });
+        } else if (event.type === "docs") {
+          qc.invalidateQueries({ queryKey: ["documents"] });
+          qc.invalidateQueries({ queryKey: ["document"] });
+        } else if (event.type === "goals") {
+          qc.invalidateQueries({ queryKey: ["goals"] });
         }
         qc.invalidateQueries({ queryKey: ["notifications"] });
       } catch {
@@ -312,7 +321,7 @@ export function useBulk(listId: string | undefined) {
   return useMutation({
     mutationFn: (input: {
       ids: string[];
-      patch?: { statusId?: string; priority?: string | null; assigneeIds?: string[] };
+      patch?: { statusId?: string; priority?: string | null; assigneeIds?: string[]; dueDate?: string | null; archived?: boolean };
       delete?: boolean;
     }) => apiSend("/api/tasks/bulk", "POST", input),
     onSettled: () => {

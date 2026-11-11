@@ -103,8 +103,69 @@ model Workspace {
   createdAt DateTime @default(now())
 
   members   WorkspaceMember[]
+  invites   WorkspaceInvite[]
+  documents WorkspaceDocument[]
+  goals     WorkspaceGoal[]
   spaces    Space[]
   templates TaskTemplate[]
+}
+
+model WorkspaceDocument {
+  id          String    @id @default(cuid())
+  workspaceId String
+  title       String
+  body        String    @default("")
+  revision    Int       @default(0)
+  archived    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, archived])
+}
+
+model WorkspaceGoal {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  description String    @default("")
+  dueDate     DateTime?
+  target      Int
+  progress    Int       @default(0)
+  unit        String    @default("items")
+  archived    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tasks     GoalTask[]
+
+  @@index([workspaceId, archived])
+}
+
+model GoalTask {
+  goalId String
+  taskId String
+  goal   WorkspaceGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  task   Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([goalId, taskId])
+  @@index([taskId])
+}
+
+model WorkspaceInvite {
+  id          String     @id @default(cuid())
+  workspaceId String
+  email       String
+  role        MemberRole
+  digest      String     @unique
+  expiresAt   DateTime
+  createdAt   DateTime   @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
 }
 
 model TaskTemplate {
@@ -179,6 +240,7 @@ model Folder {
 }
 
 model List {
+  automations TaskAutomation[]
   id        String   @id @default(cuid())
   spaceId   String // denormalized: always set, even for folder lists
   folderId  String? // null = folderless list (lives directly in space)
@@ -211,6 +273,23 @@ enum StatusType {
   CLOSED
 }
 
+model TaskAutomation {
+  id          String   @id @default(cuid())
+  listId      String
+  name        String
+  enabled     Boolean  @default(true)
+  trigger     String
+  statusId    String?
+  priority    Priority?
+  dueDays     Int?
+  assigneeId  String?
+  createdAt   DateTime @default(now())
+
+  list List @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([listId, enabled, trigger])
+}
+
 model Status {
   id       String     @id @default(cuid())
   listId   String
@@ -238,6 +317,8 @@ enum Priority {
 }
 
 model Task {
+  deletedAt     DateTime?
+  trashRootId   String?
   id           String    @id @default(cuid())
   listId       String
   statusId     String
@@ -271,10 +352,12 @@ model Task {
   notifications     Notification[]
   attachments       Attachment[]
   timeEntries       TimeEntry[]
+  goals             GoalTask[]
   blocking          TaskDependency[]   @relation("Blocking") // edges where this task blocks another
   blockedBy         TaskDependency[]   @relation("Blocked") // edges where this task waits on another
 
   @@index([listId])
+  @@index([trashRootId])
   @@index([statusId])
   @@index([parentId])
 }

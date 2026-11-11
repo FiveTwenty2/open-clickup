@@ -12,6 +12,9 @@ export type ViewState = {
     assignees: string[];
     tags: string[];
     completion?: "open" | "closed" | "all";
+    due?: "overdue" | "week" | "none" | "all";
+    assignment?: "unassigned" | "all";
+    recurrence?: "recurring" | "all";
   };
   sort: { field: SortField; dir: "asc" | "desc" };
   groupBy: GroupBy;
@@ -28,7 +31,10 @@ export function countActiveFilters(vs: ViewState): number {
     vs.filters.priorities.length +
     vs.filters.assignees.length +
     vs.filters.tags.length +
-    Number(!!vs.filters.completion && vs.filters.completion !== "all")
+    Number(!!vs.filters.completion && vs.filters.completion !== "all") +
+    Number(!!vs.filters.due && vs.filters.due !== "all") +
+    Number(vs.filters.assignment === "unassigned") +
+    Number(vs.filters.recurrence === "recurring")
   );
 }
 
@@ -41,6 +47,21 @@ export function applyViewState(
 
   if (completion && completion !== "all") {
     out = out.filter((task) => isCompletedStatus(task.status.type) === (completion === "closed"));
+  }
+  if (vs.filters.assignment === "unassigned") out = out.filter((task) => !task.assignees.length);
+  if (vs.filters.recurrence === "recurring") out = out.filter((task) => !!task.recurrence);
+  if (vs.filters.due && vs.filters.due !== "all") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    out = out.filter((task) => {
+      if (vs.filters.due === "none") return !task.dueDate;
+      if (!task.dueDate || isCompletedStatus(task.status.type)) return false;
+      const due = new Date(task.dueDate);
+      if (vs.filters.due === "overdue") return due < today;
+      return due >= today && due < nextWeek;
+    });
   }
 
   if (priorities.length) {

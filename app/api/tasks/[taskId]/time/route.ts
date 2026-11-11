@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/permissions";
+import { requireTaskInWorkspace } from "@/lib/integration-access";
 import { userSelect } from "@/lib/queries";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
@@ -20,11 +21,10 @@ const schema = z.discriminatedUnion("action", [
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const user = await requireUser();
+  const { user, workspaceId } = await requireRole("MEMBER");
   const input = await readJson(req, schema);
 
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { listId: true } });
-  if (!task) throw new ApiError(404, "Task not found");
+  const task = await requireTaskInWorkspace(taskId, workspaceId);
 
   if (input.action === "start") {
     // one running timer per user — stop any other running entry first

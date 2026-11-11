@@ -2,7 +2,7 @@
 
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { useState, type ReactElement } from "react";
-import { useDuplicateTask, useUpdateTask } from "@/lib/hooks";
+import { useDeleteTask, useDuplicateTask, useUpdateTask } from "@/lib/hooks";
 import { PRIORITY_CONFIG, PRIORITY_ORDER } from "@/lib/constants";
 import type { StatusModel, TaskWithRelations } from "@/lib/queries";
 import { isCompletedStatus, quickStatus } from "@/lib/task-status";
@@ -12,7 +12,7 @@ const panel = "z-[60] min-w-44 rounded-lg border border-cu-border bg-cu-panel p-
 const item = "flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none focus:bg-cu-hover data-[disabled]:opacity-50";
 
 export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: {
-  task: Pick<TaskWithRelations, "id" | "listId" | "name" | "status" | "priority">;
+  task: Pick<TaskWithRelations, "id" | "listId" | "name" | "status" | "priority" | "archived">;
   statuses: StatusModel[];
   onOpen: () => void;
   onRename?: () => void;
@@ -20,6 +20,7 @@ export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: 
 }) {
   const update = useUpdateTask(task.listId);
   const duplicate = useDuplicateTask(task.listId);
+  const trash = useDeleteTask(task.listId);
   const [notice, setNotice] = useState("");
   const target = quickStatus(task.status, statuses);
 
@@ -83,6 +84,8 @@ export function TaskContextMenu({ task, statuses, onOpen, onRename, children }: 
           <ContextMenu.Separator className="my-1 border-t border-cu-border" />
           <ContextMenu.Item className={item} onSelect={() => void copyLink()}>Copy task link</ContextMenu.Item>
           <ContextMenu.Item className={item} onSelect={() => duplicate.mutate(task.id, { onError: () => setNotice("Could not duplicate task.") })}>Duplicate</ContextMenu.Item>
+          <ContextMenu.Item className={item} onSelect={() => change({ archived: !task.archived })}>{task.archived ? "Unarchive task" : "Archive task"}</ContextMenu.Item>
+          <ContextMenu.Item className={item + " text-cu-urgent"} onSelect={() => trash.mutate(task.id, { onError: () => setNotice("Could not move the task to Trash.") })}>Move to Trash</ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
       {notice && <span role="status" className="sr-only">{notice}</span>}

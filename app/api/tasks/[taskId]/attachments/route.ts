@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/permissions";
+import { requireTaskInWorkspace } from "@/lib/integration-access";
 import { ApiError, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 
@@ -14,10 +15,8 @@ const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
-  const user = await requireUser();
-
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { listId: true } });
-  if (!task) throw new ApiError(404, "Task not found");
+  const { user, workspaceId } = await requireRole("MEMBER");
+  const task = await requireTaskInWorkspace(taskId, workspaceId);
 
   const form = await req.formData();
   const file = form.get("file");

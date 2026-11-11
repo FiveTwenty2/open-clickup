@@ -6,7 +6,7 @@ import { getTaskDetail } from "@/lib/queries";
 import { requireRole } from "@/lib/permissions";
 import { requireIntegrationAccess, requireTaskInWorkspace, requireWorkspaceUsers } from "@/lib/integration-access";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
-import { publish } from "@/lib/events";
+import { trashTasks } from "@/lib/task-recovery";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 
@@ -53,9 +53,6 @@ export const PATCH = route(async (req, { params }: Ctx) => {
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { taskId } = await params;
   const { workspaceId } = await requireRole("MEMBER");
-  await requireTaskInWorkspace(taskId, workspaceId);
-  const task = await prisma.task.findUnique({ where: { id: taskId }, select: { listId: true } });
-  await prisma.task.delete({ where: { id: taskId } });
-  if (task) publish({ type: "list", listId: task.listId });
+  await trashTasks(workspaceId, [taskId]);
   return NextResponse.json({ ok: true });
 });

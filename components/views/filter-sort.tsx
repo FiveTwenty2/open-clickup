@@ -76,6 +76,18 @@ export function FilterMenu({
               <option value="closed">Closed tasks</option>
             </select>
           </label>
+          <label className="mb-3 grid gap-1 text-[13px]">
+            Due date
+            <select value={state.filters.due ?? "all"} onChange={(event) => onChange({ ...state, filters: { ...state.filters, due: event.target.value as "all" | "overdue" | "week" | "none" } })} className="rounded border border-cu-border bg-cu-panel px-2 py-1">
+              <option value="all">Any date</option><option value="overdue">Overdue</option><option value="week">Next 7 days</option><option value="none">No due date</option>
+            </select>
+          </label>
+          <label className="mb-2 flex gap-2 text-[13px]">
+            <input type="checkbox" checked={state.filters.assignment === "unassigned"} onChange={(event) => onChange({ ...state, filters: { ...state.filters, assignment: event.target.checked ? "unassigned" : "all", assignees: event.target.checked ? [] : state.filters.assignees } })} /> Unassigned only
+          </label>
+          <label className="mb-3 flex gap-2 text-[13px]">
+            <input type="checkbox" checked={state.filters.recurrence === "recurring"} onChange={(event) => onChange({ ...state, filters: { ...state.filters, recurrence: event.target.checked ? "recurring" : "all" } })} /> Recurring only
+          </label>
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-cu-text-tertiary">Priority</span>
             {count > 0 && (
@@ -103,7 +115,7 @@ export function FilterMenu({
             <Row
               key={u.id}
               active={state.filters.assignees.includes(u.id)}
-              onClick={() => onChange({ ...state, filters: { ...state.filters, assignees: toggle(state.filters.assignees, u.id) } })}
+              onClick={() => onChange({ ...state, filters: { ...state.filters, assignment: "all", assignees: toggle(state.filters.assignees, u.id) } })}
             >
               <Avatar user={u} size="sm" />
               {u.name}

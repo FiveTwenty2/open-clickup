@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/permissions";
 import { ApiError, readJson, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
 
@@ -12,11 +12,11 @@ const schema = z.object({ emoji: z.string().trim().min(1).max(8) });
 /** Toggle the current user's reaction with this emoji on a comment. */
 export const POST = route(async (req, { params }: Ctx) => {
   const { commentId } = await params;
-  const user = await requireUser();
+  const { user, workspaceId } = await requireRole("MEMBER");
   const { emoji } = await readJson(req, schema);
 
   const comment = await prisma.comment.findUnique({
-    where: { id: commentId },
+    where: { id: commentId, task: { deletedAt: null, list: { space: { workspaceId } } } },
     select: { task: { select: { listId: true } } },
   });
   if (!comment) throw new ApiError(404, "Comment not found");

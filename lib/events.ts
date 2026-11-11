@@ -3,7 +3,9 @@
 
 export type RealtimeEvent =
   | { type: "list"; listId: string }
-  | { type: "bootstrap" };
+  | { type: "bootstrap" }
+  | { type: "docs" }
+  | { type: "goals" };
 
 type Listener = (event: RealtimeEvent) => void;
 

@@ -4,12 +4,14 @@ import { requireRole } from "@/lib/permissions";
 import { taskInclude } from "@/lib/queries";
 import { ApiError, route } from "@/lib/api-helpers";
 import { publish } from "@/lib/events";
+import { requireTaskInWorkspace } from "@/lib/integration-access";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 
 export const POST = route(async (_req, { params }: Ctx) => {
   const { taskId } = await params;
-  const { user } = await requireRole("MEMBER");
+  const { user, workspaceId } = await requireRole("MEMBER");
+  await requireTaskInWorkspace(taskId, workspaceId);
 
   const src = await prisma.task.findUnique({
     where: { id: taskId },

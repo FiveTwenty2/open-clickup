@@ -100,6 +100,8 @@ export function TableView({
           onSetStatus={(statusId) => bulk.mutate({ ids: [...selected], patch: { statusId } })}
           onSetPriority={(priority) => bulk.mutate({ ids: [...selected], patch: { priority } })}
           onSetAssignees={(assigneeIds) => bulk.mutate({ ids: [...selected], patch: { assigneeIds } })}
+          onDueDate={(dueDate) => bulk.mutate({ ids: [...selected], patch: { dueDate } })}
+          onArchive={() => { bulk.mutate({ ids: [...selected], patch: { archived: true } }); clearSelect(); }}
           onDelete={() => {
             bulk.mutate({ ids: [...selected], delete: true });
             clearSelect();
