@@ -1,0 +1,3 @@
+export const MAX_COMMENT_FILES = 5;
+export const MAX_COMMENT_FILE_MIB = 50;
+export const MAX_COMMENT_FILE_BYTES = MAX_COMMENT_FILE_MIB * 1024 * 1024;

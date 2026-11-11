@@ -18,6 +18,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   DndContext,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -25,11 +26,13 @@ import {
   type DragEndEvent,
   type DragOverEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn, midpoint } from "@/lib/utils";
 import type { ListData, TaskWithRelations, StatusModel, CustomFieldWithOptions } from "@/lib/queries";
 import { useUpdateTask, useCreateTask, useSetFieldValue, useDeleteTask, useDuplicateTask, useBulk } from "@/lib/hooks";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiSend } from "@/lib/api";
 import { useWorkspace } from "@/components/workspace-context";
 import { groupTasks, type TaskGroup } from "@/lib/grouping";
 import type { GroupBy } from "@/lib/view-state";
@@ -77,8 +80,13 @@ export function ListView({
     });
   const clearSelect = () => setSelected(new Set());
 
-  // drag-to-reorder is enabled only when grouping by status (cross-group = status change)
-  const sortable = groupBy === "status" && canReorder;
+  const sortable = (groupBy === "status" || groupBy === "none") && canReorder;
+  const client = useQueryClient();
+  const reorder = useMutation({
+    mutationFn: (input: { taskId: string; targetId: string; placement: "before" | "after" }) =>
+      apiSend(`/api/lists/${list.id}/reorder`, "POST", input),
+    onSettled: () => client.invalidateQueries({ queryKey: ["list", list.id] }),
+  });
   const [cols, setCols] = useState<Record<string, TaskWithRelations[]>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
 
@@ -86,13 +94,14 @@ export function ListView({
     if (!sortable || activeId) return;
     const next: Record<string, TaskWithRelations[]> = {};
     for (const s of statuses) next[s.id] = [];
-    for (const t of tasks) (next[t.statusId] ??= []).push(t);
+    for (const t of tasks) (next[groupBy === "none" ? "all" : t.statusId] ??= []).push(t);
     for (const k of Object.keys(next)) next[k].sort((a, b) => a.position - b.position);
     setCols(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, statuses, sortable]);
+  }, [tasks, statuses, sortable, groupBy]);
 
   const groups = useMemo(() => {
+    if (sortable && groupBy === "none") return groupTasks(cols.all ?? tasks, "none", { statuses, members });
     if (sortable) {
       return statuses.map((s) => ({
         id: s.id,
@@ -105,7 +114,10 @@ export function ListView({
     return groupTasks(tasks, groupBy, { statuses, members });
   }, [sortable, cols, tasks, groupBy, statuses, members]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   function findCol(id: string): string | undefined {
     if (cols[id]) return id;
@@ -137,7 +149,18 @@ export function ListView({
     const id = String(e.active.id);
     const overId = e.over ? String(e.over.id) : null;
     setActiveId(null);
-    if (!overId) return;
+    if (!overId || id === overId && groupBy === "none") return;
+    if (groupBy === "none") {
+      const rows = cols.all ?? tasks;
+      const from = rows.findIndex((row) => row.id === id);
+      const to = rows.findIndex((row) => row.id === overId);
+      if (from < 0 || to < 0 || reorder.isPending) return;
+      setCols({ all: arrayMove(rows, from, to) });
+      reorder.mutate({ taskId: id, targetId: overId, placement: from < to ? "after" : "before" }, {
+        onError: () => setCols({ all: rows }),
+      });
+      return;
+    }
     const col = findCol(id);
     if (!col) return;
     let items = cols[col];
@@ -183,9 +206,10 @@ export function ListView({
 
   return (
     <div className="flex-1 overflow-auto">
+      {reorder.isError && <p role="alert" className="px-4 py-2 text-sm text-cu-urgent">Could not save the task order. Try again.</p>}
       <div className="min-w-max">
         {sortable ? (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => { setActiveId(null); setCols(Object.fromEntries(groupTasks(tasks, groupBy, { statuses, members }).map((group) => [group.id, group.tasks]))); }}>
             {body}
           </DndContext>
         ) : (
@@ -373,7 +397,8 @@ function SortableRow({ task, rowProps }: { task: TaskWithRelations; rowProps: Ro
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
-            className="hidden cursor-grab text-cu-text-tertiary hover:text-cu-text active:cursor-grabbing group-hover:block"
+            className="touch-none cursor-grab text-cu-text-tertiary hover:text-cu-text active:cursor-grabbing"
+            aria-label={`Reorder ${task.name}`}
             title="Drag to reorder"
           >
             <GripVertical className="h-3.5 w-3.5" />

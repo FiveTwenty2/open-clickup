@@ -6,16 +6,19 @@ import { requireTaskInWorkspace } from "@/lib/integration-access";
 import { userSelect, commentFileSelect } from "@/lib/queries";
 import { ApiError, readJson, route, validateInput } from "@/lib/api-helpers";
 import { extractMentionIds } from "@/lib/mentions";
+import { MAX_COMMENT_FILES, MAX_COMMENT_FILE_MIB, MAX_COMMENT_FILE_BYTES } from "@/lib/comment-file-limits";
 import { publish } from "@/lib/events";
 
 type Ctx = { params: Promise<{ taskId: string }> };
 const schema = z.object({ body: z.string().trim().max(50000), parentId: z.string().nullish() });
-const maxBytes = 10 * 1024 * 1024;
+
 
 export const POST = route(async (req, { params }: Ctx) => {
   const { taskId } = await params;
   const { user, workspaceId } = await requireRole("MEMBER");
   const task = await requireTaskInWorkspace(taskId, workspaceId);
+  const contentLength = Number(req.headers.get("content-length"));
+  if (contentLength > MAX_COMMENT_FILE_BYTES + 1024 * 1024) throw new ApiError(413, "Comment upload is too large");
   const form = req.headers.get("content-type")?.startsWith("multipart/form-data")
     ? await req.formData().catch(() => { throw new ApiError(400, "Invalid attachment upload"); })
     : null;
@@ -23,11 +26,11 @@ export const POST = route(async (req, { params }: Ctx) => {
     ? validateInput({ body: form.get("body") ?? "", parentId: form.get("parentId") }, schema)
     : await readJson(req, schema);
   const uploads = form?.getAll("files") ?? [];
-  if (uploads.length > 5 || uploads.some((file) => !(file instanceof File) || file.size === 0 || !file.name)) {
+  if (uploads.length > MAX_COMMENT_FILES || uploads.some((file) => !(file instanceof File) || file.size === 0 || !file.name)) {
     throw new ApiError(400, "Select up to five non-empty files");
   }
   const files = uploads as File[];
-  if (files.reduce((total, file) => total + file.size, 0) > maxBytes) throw new ApiError(413, "Files exceed 10 MB combined");
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_COMMENT_FILE_BYTES) throw new ApiError(413, `Files exceed ${MAX_COMMENT_FILE_MIB} MB combined`);
   if ((!body || body === "<p></p>") && !files.length) throw new ApiError(400, "Write a comment or attach a file");
   const attachments = await Promise.all(files.map(async (file) => ({
     name: file.name.replace(/[\x00-\x1f\x7f]/g, "").slice(0, 255) || "Attachment",

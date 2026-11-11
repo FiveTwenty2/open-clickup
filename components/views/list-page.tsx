@@ -23,7 +23,7 @@ import { useList, useCreateTask, useToggleFavorite } from "@/lib/hooks";
 import { useWorkspace } from "@/components/workspace-context";
 import { apiSend } from "@/lib/api";
 import { ViewType } from "@/lib/enums";
-import { EMPTY_VIEW_STATE, applyViewState, type ViewState } from "@/lib/view-state";
+import { EMPTY_VIEW_STATE, applyViewState, countActiveFilters, type ViewState } from "@/lib/view-state";
 import { FilterMenu, SortMenu, GroupMenu } from "@/components/views/filter-sort";
 import { ListView } from "@/components/views/list-view";
 import { BoardView } from "@/components/views/board-view";
@@ -71,7 +71,7 @@ function vsFromConfig(config: unknown): ViewState {
 export function ListPage({ listId }: { listId: string }) {
   const { data, isLoading, error } = useList(listId);
   const create = useCreateTask(listId);
-  const { favorites, currentUser } = useWorkspace();
+  const { favorites, currentUser, workspace } = useWorkspace();
   const toggleFav = useToggleFavorite();
   const isFav = favorites.includes(listId);
   const router = useRouter();
@@ -91,6 +91,17 @@ export function ListPage({ listId }: { listId: string }) {
   const [viewName, setViewName] = useState("");
   const [viewType, setViewType] = useState<ViewType>("LIST");
   const client = useQueryClient();
+  const canWrite = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
+  const archive = useMutation({
+    mutationFn: (archived: boolean) => apiSend(`/api/lists/${listId}`, "PATCH", { archived }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["list", listId] }),
+        client.invalidateQueries({ queryKey: ["bootstrap"] }),
+        client.invalidateQueries({ queryKey: ["archived-lists"] }),
+      ]);
+    },
+  });
   const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   const views = data?.list.views ?? [];
@@ -152,7 +163,7 @@ export function ListPage({ listId }: { listId: string }) {
   );
 
   async function addTask() {
-    if (!data) return;
+    if (!data || data.list.archivedAt || !canWrite) return;
     const task = await create.mutateAsync({
       listId,
       name: "New task",
@@ -167,7 +178,7 @@ export function ListPage({ listId }: { listId: string }) {
     window.addEventListener("create-task", handler);
     return () => window.removeEventListener("create-task", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, listId]);
+  }, [data, listId, canWrite]);
 
   if (isLoading) return <PageSkeleton />;
   if (error || !data)
@@ -203,6 +214,8 @@ export function ListPage({ listId }: { listId: string }) {
         >
           <Star className={cn("h-4 w-4", isFav && "fill-current")} />
         </button>
+        {list.archivedAt && <span className="rounded bg-cu-hover px-2 py-1 text-xs">Archived</span>}
+        {archive.isError && <span role="alert" className="text-xs text-cu-urgent">Could not update list archive.</span>}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button aria-label="List actions" className="rounded p-1 text-cu-text-tertiary hover:bg-cu-hover">
@@ -215,6 +228,10 @@ export function ListPage({ listId }: { listId: string }) {
               align="start"
               className="z-50 min-w-[180px] rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg"
             >
+              {canWrite && <DropdownMenu.Item disabled={archive.isPending} onSelect={() => archive.mutate(!list.archivedAt)}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover">
+                {list.archivedAt ? "Unarchive list" : "Archive list"}
+              </DropdownMenu.Item>}
               <DropdownMenu.Item
                 onSelect={() => setStatusMgr(true)}
                 className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-[13px] outline-none hover:bg-cu-hover"
@@ -298,6 +315,7 @@ export function ListPage({ listId }: { listId: string }) {
           </button>
           <button
             onClick={addTask}
+            disabled={!canWrite || !!list.archivedAt}
             className="ml-1 flex items-center gap-1 rounded bg-cu-purple px-2.5 py-1.5 text-[13px] font-medium text-white hover:bg-cu-purple-dark"
           >
             <Plus className="h-4 w-4" /> Add Task
@@ -312,7 +330,7 @@ export function ListPage({ listId }: { listId: string }) {
       )}
 
       {/* active view */}
-      {shownData && shownData.tasks.length === 0 ? (
+      {activeView?.type !== "CALENDAR" && shownData && shownData.tasks.length === 0 ? (
         data.tasks.length === 0 ? (
           <EmptyState
             icon={<ClipboardList className="h-6 w-6" />}
@@ -321,6 +339,7 @@ export function ListPage({ listId }: { listId: string }) {
             action={
               <button
                 onClick={addTask}
+                disabled={!canWrite || !!list.archivedAt}
                 className="flex items-center gap-1 rounded-md bg-cu-purple px-3 py-1.5 text-[13px] font-medium text-white hover:bg-cu-purple-dark"
               >
                 <Plus className="h-4 w-4" /> Add Task
@@ -336,9 +355,9 @@ export function ListPage({ listId }: { listId: string }) {
         )
       ) : (
         <>
-          {activeView?.type === "LIST" && <ListView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={!vs.sort.field && !query.trim()} />}
-          {activeView?.type === "BOARD" && <BoardView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={!vs.sort.field && !query.trim()} />}
-          {activeView?.type === "CALENDAR" && <CalendarView data={shownData!} onOpenTask={setOpenTaskId} />}
+          {activeView?.type === "LIST" && <ListView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field && !query.trim() && !countActiveFilters(vs)} />}
+          {activeView?.type === "BOARD" && <BoardView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} canReorder={canWrite && !list.archivedAt && !vs.sort.field && !query.trim() && !countActiveFilters(vs)} />}
+          {activeView?.type === "CALENDAR" && <CalendarView listId={listId} tasks={shownData!.tasks.flatMap((task) => [task, ...task.subtasks])} onOpenTask={setOpenTaskId} canSchedule={canWrite && !list.archivedAt} />}
           {activeView?.type === "GANTT" && <GanttView data={shownData!} onOpenTask={setOpenTaskId} />}
           {activeView?.type === "TABLE" && <TableView data={shownData!} onOpenTask={setOpenTaskId} groupBy={vs.groupBy} />}
         </>

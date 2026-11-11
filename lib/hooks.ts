@@ -56,6 +56,7 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["my-tasks"] });
           qc.invalidateQueries({ queryKey: ["recovery"] });
           qc.invalidateQueries({ queryKey: ["dashboard"] });
+          qc.invalidateQueries({ queryKey: ["workspace-calendar"] });
           qc.invalidateQueries({ queryKey: ["workspace-tasks"] });
           qc.invalidateQueries({ queryKey: ["goals"] });
           qc.invalidateQueries({ queryKey: ["audit"] });
@@ -63,6 +64,7 @@ export function useRealtime() {
           qc.invalidateQueries({ queryKey: ["messages"] });
         } else if (event.type === "bootstrap") {
           qc.invalidateQueries({ queryKey: ["bootstrap"] });
+          qc.invalidateQueries({ queryKey: ["archived-lists"] });
         } else if (event.type === "docs") {
           qc.invalidateQueries({ queryKey: ["documents"] });
           qc.invalidateQueries({ queryKey: ["document"] });
@@ -288,6 +290,7 @@ export function useUpdateTask(listId: string | undefined) {
     onSettled: (task, _error, { taskId }) => {
       if (listId) qc.invalidateQueries({ queryKey: ["list", listId] });
       qc.invalidateQueries({ queryKey: ["task", taskId] });
+      if (!listId) qc.invalidateQueries({ queryKey: ["workspace-calendar"] });
       if (task?.parentId) qc.invalidateQueries({ queryKey: ["task", task.parentId] });
     },
   });
@@ -303,9 +306,11 @@ export function useCreateTask(listId: string | undefined) {
       parentId?: string | null;
       priority?: string | null;
       assigneeIds?: string[];
+      dueDate?: string;
     }) => apiSend<TaskWithRelations>("/api/tasks", "POST", input),
     onSettled: () => {
       if (listId) qc.invalidateQueries({ queryKey: ["list", listId] });
+      qc.invalidateQueries({ queryKey: ["workspace-calendar"] });
     },
   });
 }

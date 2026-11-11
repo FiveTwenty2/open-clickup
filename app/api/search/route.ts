@@ -10,7 +10,7 @@ export const GET = route(async (req) => {
 
   const [tasks, lists] = await Promise.all([
     prisma.task.findMany({
-      where: { name: { contains: q, mode: "insensitive" }, archived: false, deletedAt: null, list: { space: { workspaceId } } },
+      where: { name: { contains: q, mode: "insensitive" }, archived: false, deletedAt: null, list: { space: { workspaceId }, archivedAt: null } },
       take: 12,
       orderBy: { updatedAt: "desc" },
       select: {
@@ -22,7 +22,7 @@ export const GET = route(async (req) => {
       },
     }),
     prisma.list.findMany({
-      where: { name: { contains: q, mode: "insensitive" }, space: { workspaceId } },
+      where: { archivedAt: null, name: { contains: q, mode: "insensitive" }, space: { workspaceId } },
       take: 6,
       select: {
         id: true,

@@ -19,6 +19,7 @@ import {
   Reply,
   Check,
 } from "lucide-react";
+import { MAX_COMMENT_FILES, MAX_COMMENT_FILE_MIB, MAX_COMMENT_FILE_BYTES } from "@/lib/comment-file-limits";
 import { apiGet, apiSend } from "@/lib/api";
 import type { TaskDetail } from "@/lib/queries";
 import type { TaskPatch } from "@/lib/tasks";
@@ -760,13 +761,13 @@ function CommentComposer({
           <RichEditor key={resetKey} content="" placeholder={reply ? "Write a reply…" : "Write a comment…"}
             mentions={mentions} onChange={setHtml} />
           <label className="mt-2 block text-xs text-cu-text-secondary">
-            Attach files (up to 5, 10 MB total)
+            Attach files (up to {MAX_COMMENT_FILES}, {MAX_COMMENT_FILE_MIB} MB total)
             <input type="file" multiple aria-label={reply ? "Attach files to reply" : "Attach files to comment"} className="mt-1 block max-w-full"
               onChange={(event) => {
                 const selected = [...files, ...Array.from(event.target.files ?? [])];
                 event.target.value = "";
-                if (selected.length > 5 || selected.some((file) => !file.size) || selected.reduce((n, file) => n + file.size, 0) > 10 * 1024 * 1024) {
-                  setError("Select up to five non-empty files, 10 MB total.");
+                if (selected.length > MAX_COMMENT_FILES || selected.some((file) => !file.size) || selected.reduce((n, file) => n + file.size, 0) > MAX_COMMENT_FILE_BYTES) {
+                  setError(`Select up to ${MAX_COMMENT_FILES} non-empty files, ${MAX_COMMENT_FILE_MIB} MB total.`);
                   return;
                 }
                 setError("");

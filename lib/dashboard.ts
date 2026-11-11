@@ -7,7 +7,7 @@ export async function getDashboard(workspaceId: string, range: { from: Date; to:
     ...(range.listId && { listId: range.listId }),
   };
   const active: Prisma.TaskWhereInput = {
-    ...scope, archived: false, deletedAt: null,
+    ...scope, list: { space: { workspaceId }, archivedAt: null }, archived: false, deletedAt: null,
     ...(range.userId && { assignees: { some: { userId: range.userId } } }),
   };
   const open: Prisma.TaskWhereInput = { ...active, status: { type: { in: ["ACTIVE", "NOT_STARTED"] } } };

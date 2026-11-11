@@ -16,6 +16,7 @@ export async function createTask(input: {
   priority?: Priority | null;
   assigneeIds?: string[];
   createdById?: string;
+  dueDate?: string;
 }) {
   // resolve status (default = first status of the list)
   const status = await prisma.status.findFirst({
@@ -38,7 +39,7 @@ export async function createTask(input: {
   });
   const position = (last?.position ?? 0) + 1000;
   const automated = await applyTaskAutomations(input.listId, "CREATED", status.id, {
-    priority: input.priority, assigneeIds: input.assigneeIds ?? [],
+    priority: input.priority, dueDate: input.dueDate, assigneeIds: input.assigneeIds ?? [],
   });
 
   const task = await prisma.task.create({

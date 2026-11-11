@@ -11,6 +11,7 @@ const schema = z.object({
   parentId: z.string().nullish(),
   priority: z.enum(["URGENT", "HIGH", "NORMAL", "LOW"]).nullish(),
   assigneeIds: z.array(z.string()).optional(),
+  dueDate: z.string().datetime().optional(),
 });
 
 export const POST = route(async (req) => {
@@ -26,6 +27,7 @@ export const POST = route(async (req) => {
     priority: body.priority ?? null,
     assigneeIds: body.assigneeIds ?? [],
     createdById: user.id,
+    dueDate: body.dueDate,
   });
   return NextResponse.json(task, { status: 201 });
 });

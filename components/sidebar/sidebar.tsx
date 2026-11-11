@@ -26,9 +26,12 @@ import {
   FileText,
   Target,
   ClipboardList,
+  CalendarDays,
+  Archive,
   MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiSend } from "@/lib/api";
 import { useWorkspace } from "@/components/workspace-context";
 import { useHierarchy } from "@/lib/hooks";
@@ -94,6 +97,7 @@ export function Sidebar({ onCollapse }: { onCollapse?: () => void }) {
           onClick={() => router.push("/home")}
         />
         <InboxButton />
+        <NavItem icon={<CalendarDays className="h-4 w-4" />} label="Calendar" active={pathname === "/calendar"} onClick={() => router.push("/calendar")} />
         {workspace.members.find((member) => member.userId === currentUser.id)?.role !== "GUEST" && (
           <NavItem icon={<MessageSquare className="h-4 w-4" />} label="Messages" active={pathname === "/messages"} onClick={() => router.push("/messages")} />
         )}
@@ -402,7 +406,17 @@ function FolderItem({ folder }: { folder: FolderNode }) {
 function ListItemRow({ list, depth }: { list: ListNode & { spaceId?: string }; depth: number }) {
   const params = useParams();
   const router = useRouter();
-  const { rename, remove } = useHierarchy();
+  const { rename } = useHierarchy();
+  const { currentUser, workspace } = useWorkspace();
+  const canWrite = workspace.members.some((member) => member.userId === currentUser.id && member.role !== "GUEST");
+  const qc = useQueryClient();
+  const archive = useMutation({
+    mutationFn: () => apiSend(`/api/lists/${list.id}`, "PATCH", { archived: true }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["bootstrap"] });
+      if (active) router.push("/recovery?mode=lists");
+    },
+  });
   const [renaming, setRenaming] = useState(false);
   const active = params?.listId === list.id;
 
@@ -422,31 +436,26 @@ function ListItemRow({ list, depth }: { list: ListNode & { spaceId?: string }; d
   }
 
   return (
-    <Link
-      href={`/l/${list.id}`}
-      onDoubleClick={(e) => { e.preventDefault(); setRenaming(true); }}
-      className={cn(
+    <div className={cn(
         "group flex items-center gap-2 rounded-md py-1.5 pr-2 text-[13px]",
         active ? "bg-cu-sidebar-active font-medium text-cu-purple-dark" : "text-cu-text hover:bg-cu-hover-strong",
       )}
       style={{ paddingLeft: depth * 14 + 8 }}
     >
-      <ListIcon
-        className={cn("h-4 w-4 shrink-0", active ? "text-cu-purple" : "text-cu-text-secondary")}
-        style={list.color && !active ? { color: list.color } : undefined}
-      />
-      <span className="truncate">{list.name}</span>
+      <Link href={`/l/${list.id}`} className="flex min-w-0 flex-1 items-center gap-2"
+        onDoubleClick={(event) => { if (canWrite) { event.preventDefault(); setRenaming(true); } }}>
+        <ListIcon
+          className={cn("h-4 w-4 shrink-0", active ? "text-cu-purple" : "text-cu-text-secondary")}
+          style={list.color && !active ? { color: list.color } : undefined}
+        />
+        <span className="truncate">{list.name}</span>
+      </Link>
       <span className="ml-auto flex items-center gap-1">
         <span className="hidden text-[11px] text-cu-text-tertiary group-hover:inline">{list._count.tasks}</span>
-        <RowMenu
-          onRename={() => setRenaming(true)}
-          onDelete={() => {
-            if (active) router.push("/");
-            remove.mutate({ kind: "lists", id: list.id });
-          }}
-        />
+        {canWrite && <RowMenu label={`Options for ${list.name}`} onRename={() => setRenaming(true)} onArchive={() => archive.mutate()} />}
+        {archive.isError && <span role="alert" className="text-xs text-cu-urgent">Archive failed</span>}
       </span>
-    </Link>
+    </div>
   );
 }
 
@@ -510,13 +519,14 @@ function Row({
   );
 }
 
-function RowMenu({ onRename, onDelete }: { onRename?: () => void; onDelete?: () => void }) {
+function RowMenu({ label = "Options", onRename, onDelete, onArchive }: { label?: string; onRename?: () => void; onDelete?: () => void; onArchive?: () => void }) {
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <button
+          aria-label={label}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-          className="hidden rounded p-0.5 text-cu-text-tertiary hover:bg-cu-hover group-hover:block"
+          className="rounded p-0.5 text-cu-text-tertiary opacity-0 hover:bg-cu-hover focus:opacity-100 group-hover:opacity-100"
         >
           <Ellipsis className="h-3.5 w-3.5" />
         </button>
@@ -524,6 +534,7 @@ function RowMenu({ onRename, onDelete }: { onRename?: () => void; onDelete?: () 
       <DropdownMenu.Portal>
         <DropdownMenu.Content sideOffset={4} align="end" className="z-50 min-w-[150px] rounded-lg border border-cu-border bg-cu-panel p-1 shadow-lg">
           {onRename && <MenuItem icon={<Pencil className="h-4 w-4" />} label="Rename" onSelect={onRename} />}
+          {onArchive && <MenuItem icon={<Archive className="h-4 w-4" />} label="Archive list" onSelect={onArchive} />}
           {onDelete && <MenuItem icon={<Trash2 className="h-4 w-4" />} label="Delete" onSelect={onDelete} danger />}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

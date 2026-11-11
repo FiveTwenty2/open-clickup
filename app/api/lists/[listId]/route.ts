@@ -4,12 +4,14 @@ import { getListData } from "@/lib/queries";
 import { prisma } from "@/lib/db";
 import { requireIntegrationAccess, requireListInWorkspace } from "@/lib/integration-access";
 import { requireRole } from "@/lib/permissions";
+import { publish } from "@/lib/events";
 import { readJson, route, ApiError } from "@/lib/api-helpers";
 
 type Ctx = { params: Promise<{ listId: string }> };
 const schema = z.object({
   name: z.string().trim().min(1).optional(),
   color: z.string().nullish(),
+  archived: z.boolean().optional(),
 });
 
 export const GET = route(async (req, { params }: Ctx) => {
@@ -23,15 +25,26 @@ export const GET = route(async (req, { params }: Ctx) => {
 
 export const PATCH = route(async (req, { params }: Ctx) => {
   const { listId } = await params;
-  await requireRole("MEMBER");
-  const data = await readJson(req, schema);
-  const list = await prisma.list.update({ where: { id: listId }, data });
+  const { user, workspaceId } = await requireIntegrationAccess(req, true);
+  const { archived, ...fields } = await readJson(req, schema);
+  const list = await prisma.$transaction(async (tx) => {
+    const current = await tx.list.findFirst({
+      where: { id: listId, space: { workspaceId } }, select: { archivedAt: true },
+    });
+    if (!current) throw new ApiError(404, "List not found");
+    const changes = archived !== undefined && archived !== Boolean(current.archivedAt)
+      ? { archivedAt: archived ? new Date() : null, archivedBy: archived ? user.name : null } : {};
+    return tx.list.update({ where: { id: listId, space: { workspaceId } }, data: { ...fields, ...changes } });
+  });
+  publish({ type: "bootstrap" });
+  publish({ type: "list", listId });
   return NextResponse.json(list);
 });
 
 export const DELETE = route(async (_req, { params }: Ctx) => {
   const { listId } = await params;
-  await requireRole("MEMBER");
-  await prisma.list.delete({ where: { id: listId } });
+  const { workspaceId } = await requireRole("MEMBER");
+  await prisma.list.delete({ where: { id: listId, space: { workspaceId } } });
+  publish({ type: "bootstrap" });
   return NextResponse.json({ ok: true });
 });

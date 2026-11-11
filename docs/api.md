@@ -48,6 +48,12 @@ CSV import accepts `{ "csv": "...", "preview": true }`. Use `preview: false` to 
 These endpoints use the signed-in browser session.
 
 - `GET /api/messages?peer=<userId>` reads a direct conversation. Use `before=<messageId>` to fetch older messages. `POST /api/messages` takes `{ "peerId": "...", "body": "..." }`.
-- `POST /api/tasks/:id/comments` accepts JSON with `body` and optional `parentId`. For files, use multipart form data with the same fields and repeat the `files` field for each attachment. Up to five files and 10 MB total are allowed. Attachment metadata includes an ID for `GET /api/comment-files/:id`.
+- `POST /api/tasks/:id/comments` accepts JSON with `body` and optional `parentId`. For files, use multipart form data with the same fields and repeat the `files` field for each attachment. Up to five files and 50 MB total are allowed. Attachment metadata includes an ID for `GET /api/comment-files/:id`.
 - `GET /api/notifications` accepts `filter=all|unread|archive` and zero-based `page`. `PATCH /api/notifications` takes `ids` and `action=read|unread|archive|restore`.
 - `GET /api/audit` is available to workspace owners and admins. Filter by `actor` (user ID), `action=recovery|discussion`, and `q` (task name). Use zero-based `page` for older entries.
+
+## List archive, manual order, and calendar
+
+- `PATCH /api/lists/:id` accepts `{ "archived": true }` to archive a list and `false` to restore it. `GET /api/lists/archive?q=&page=0` lists archived lists.
+- `POST /api/lists/:id/reorder` accepts `taskId`, `targetId`, and `placement` (`before` or `after`) for active top-level tasks in the same list.
+- `GET /api/workspace/calendar` returns calendar tasks across active lists. Use `list=<listId>` to narrow the result. `POST /api/tasks` accepts an optional ISO 8601 `dueDate` to create a scheduled task.

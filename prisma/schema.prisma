@@ -245,6 +245,8 @@ model Folder {
 }
 
 model List {
+  archivedAt DateTime?
+  archivedBy String?
   automations TaskAutomation[]
   id        String   @id @default(cuid())
   spaceId   String // denormalized: always set, even for folder lists

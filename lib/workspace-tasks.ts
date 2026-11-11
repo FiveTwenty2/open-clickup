@@ -12,7 +12,7 @@ export type WorkspaceTaskFilters = {
 
 export async function getWorkspaceTasks(workspaceId: string, filters: WorkspaceTaskFilters) {
   const where: Prisma.TaskWhereInput = {
-    list: { space: { workspaceId } }, archived: false, deletedAt: null,
+    list: { space: { workspaceId }, archivedAt: null }, archived: false, deletedAt: null,
     ...(filters.listId && { listId: filters.listId }),
     ...(filters.q && { name: { contains: filters.q, mode: "insensitive" } }),
     ...(filters.assignee && { assignees: filters.assignee === "unassigned" ? { none: {} } : { some: { userId: filters.assignee } } }),

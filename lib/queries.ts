@@ -51,13 +51,14 @@ export async function getWorkspaceTree(workspaceId: string) {
             orderBy: { position: "asc" },
             include: {
               lists: {
+                where: { archivedAt: null },
                 orderBy: { position: "asc" },
                 include: { _count: { select: { tasks: { where: { archived: false, deletedAt: null, parentId: null } } } } },
               },
             },
           },
           lists: {
-            where: { folderId: null },
+            where: { folderId: null, archivedAt: null },
             orderBy: { position: "asc" },
             include: { _count: { select: { tasks: { where: { archived: false, deletedAt: null, parentId: null } } } } },
           },
@@ -95,7 +96,7 @@ export async function getListData(listId: string) {
 
   const tasks = await prisma.task.findMany({
     where: { listId, parentId: null, archived: false, deletedAt: null },
-    orderBy: { position: "asc" },
+    orderBy: [{ position: "asc" }, { id: "asc" }],
     include: taskInclude,
   });
 
