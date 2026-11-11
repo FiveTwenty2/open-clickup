@@ -91,7 +91,7 @@ export async function getListData(listId: string, viewerId: string) {
         include: { options: { orderBy: { position: "asc" } } },
       },
       views: {
-        where: { OR: [{ privateOwnerId: null }, { privateOwnerId: viewerId }] },
+        where: { OR: [{ privateOwnerId: null }, { privateOwnerId: viewerId }, { readers: { some: { userId: viewerId } } }] },
         orderBy: [{ position: "asc" }, { id: "asc" }],
       },
     },

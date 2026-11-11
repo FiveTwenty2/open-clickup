@@ -8,7 +8,7 @@ export function proxy(req: NextRequest) {
   const hasSession = req.cookies.has("cu_session");
   const { pathname } = req.nextUrl;
 
-  if (!hasSession && pathname !== "/login" && !/^\/(submit|shared-task)\/[a-zA-Z0-9_-]{32}$/.test(pathname)) {
+  if (!hasSession && pathname !== "/login" && !/^\/(submit|shared-task|shared-view)\/[a-zA-Z0-9_-]{32}$/.test(pathname)) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
   if (hasSession && pathname === "/login") {

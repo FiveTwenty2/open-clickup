@@ -118,7 +118,7 @@ export function ListPage({ listId }: { listId: string }) {
 
   // initialize the active view + load its persisted config once data arrives
   useEffect(() => {
-    if (!activeViewId && views.length) {
+    if (views.length && !views.some((view) => view.id === activeViewId)) {
       const initial = views.find((view) => view.id === viewParam) ?? views.find((view) => !view.privateOwnerId) ?? views[0];
       setActiveViewId(initial.id);
       setVs(vsFromConfig(initial.config));
@@ -148,7 +148,7 @@ export function ListPage({ listId }: { listId: string }) {
 
   function updateVs(next: ViewState) {
     setVs(next);
-    if (!activeViewId || !canWrite || (activeView?.protected && !canManage)) return;
+    if (!activeViewId || !canWrite || (activeView?.privateOwnerId && activeView.privateOwnerId !== currentUser.id) || (activeView?.protected && !canManage)) return;
     clearTimeout(saveTimers.current.get(activeViewId));
     saveTimers.current.set(activeViewId, setTimeout(() => {
       saveTimers.current.delete(activeViewId);
@@ -288,7 +288,7 @@ export function ListPage({ listId }: { listId: string }) {
       <div className="flex items-center justify-between border-b border-cu-border px-3">
         <div className="flex items-center gap-0.5">
           {list.views.map((v) => (
-            <ViewOptions key={v.id} view={v} active={activeView?.id === v.id} canEdit={canWrite && (!v.protected || canManage)} canManage={canManage} isDefault={v.id === views.find((view) => !view.privateOwnerId)?.id} allowDelete={!!v.privateOwnerId || views.filter((view) => !view.privateOwnerId).length > 1}
+            <ViewOptions key={v.id} view={v} active={activeView?.id === v.id} canEdit={canWrite && (!v.privateOwnerId || v.privateOwnerId === currentUser.id) && (!v.protected || canManage)} canManage={canManage && (!v.privateOwnerId || v.privateOwnerId === currentUser.id)} canShare={v.privateOwnerId ? v.privateOwnerId === currentUser.id : canManage} isDefault={v.id === views.find((view) => !view.privateOwnerId)?.id} allowDelete={!!v.privateOwnerId || views.filter((view) => !view.privateOwnerId).length > 1}
               selectView={(view) => {
                 if (view) selectView(view);
                 else if (v.id === activeView?.id) setActiveViewId(null);

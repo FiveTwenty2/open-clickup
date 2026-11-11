@@ -618,6 +618,8 @@ enum ViewType {
 }
 
 model View {
+  readers ViewReader[]
+  publicLink ViewPublicLink?
   privateOwnerId String?
   protected Boolean @default(false)
   @@index([listId, privateOwnerId])
@@ -737,4 +739,18 @@ model TaskPublicShare {
   taskId String @id
   key String @unique
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model ViewReader {
+  viewId String
+  userId String
+  view View @relation(fields: [viewId], references: [id], onDelete: Cascade)
+
+  @@id([viewId, userId])
+}
+
+model ViewPublicLink {
+  viewId String @id
+  key String @unique
+  view View @relation(fields: [viewId], references: [id], onDelete: Cascade)
 }

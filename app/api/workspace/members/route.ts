@@ -20,6 +20,7 @@ export const PATCH = route(async (req) => {
       : await tx.workspaceMember.deleteMany({ where: allowed });
     if (!changed.count) throw new ApiError(403, "You cannot manage this membership");
     if (!role) {
+      await tx.viewReader.deleteMany({ where: { userId, view: { list: { space: { workspaceId: actor.workspaceId } } } } });
       await tx.apiToken.deleteMany({ where: { userId, workspaceId: actor.workspaceId } });
       await tx.session.deleteMany({ where: { userId } });
     }

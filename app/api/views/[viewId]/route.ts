@@ -58,6 +58,10 @@ export const PATCH = route(async (req, { params }: Ctx) => {
       const first = await tx.view.aggregate({ where: { listId: current.listId, privateOwnerId: null }, _min: { position: true } });
       data.position = (first._min.position ?? 0) - 1;
     }
+    if (body.private !== undefined && ownerId !== current.privateOwnerId) {
+      await tx.viewReader.deleteMany({ where: { viewId } });
+      await tx.viewPublicLink.deleteMany({ where: { viewId } });
+    }
     return tx.view.update({ where: { id: viewId }, data });
   });
   if (Object.keys(body).some((key) => key !== "config")) publish({ type: "list", listId: view.listId });

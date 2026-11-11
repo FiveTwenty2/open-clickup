@@ -4,13 +4,14 @@ import { cloneElement, useState, type MouseEvent, type ReactElement } from "reac
 import * as Popover from "@radix-ui/react-popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ellipsis } from "lucide-react";
+import { ViewSharing } from "@/components/views/view-sharing";
 import { apiSend } from "@/lib/api";
 import type { ListWithMeta } from "@/lib/queries";
 
 type View = ListWithMeta["views"][number];
 const button = "rounded border border-cu-border px-2 py-1 text-sm hover:bg-cu-hover disabled:opacity-50";
 
-export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault, canManage }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean; canManage: boolean }) {
+export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdit, isDefault, canManage, canShare }: { view: View; allowDelete: boolean; selectView: (view: View | null) => void; tab: ReactElement<{ onContextMenu?: (event: MouseEvent) => void }>; active: boolean; canEdit: boolean; isDefault: boolean; canManage: boolean; canShare: boolean }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(view.name);
   const [notice, setNotice] = useState("");
@@ -68,6 +69,7 @@ export function ViewOptions({ view, allowDelete, selectView, tab, active, canEdi
             onClick={() => confirm ? mutation.mutate("delete") : setConfirm(true)}>{confirm ? "Confirm deletion" : "Delete view"}</button>}
         </div>
         </>}
+        {open && canShare && (view.privateOwnerId || view.type === "LIST" || view.type === "TABLE") && <ViewSharing viewId={view.id} isPrivate={!!view.privateOwnerId} />}
         {mutation.isError && <p role="alert" className="mt-2 text-sm text-cu-urgent">Could not update this view.</p>}
       </Popover.Content>
     </Popover.Portal>

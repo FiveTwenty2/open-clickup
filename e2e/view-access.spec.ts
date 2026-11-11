@@ -76,3 +76,61 @@ test("keeps private views private and enforces locks for shared views", async ({
     await anonymous.close();
   }
 });
+
+test("grants and revokes teammate view access and publishes only matching task summaries", async ({ page, browser }) => {
+  await login(page, "santiago");
+  const { workspace } = await (await page.request.get("/api/bootstrap")).json();
+  const maya = workspace.members.find((member: { user: { name: string } }) => member.user.name === "Maya Chen").user;
+  const list = await (await page.request.post("/api/lists", { data: { name: "View sharing " + Date.now(), spaceId: workspace.spaces[0].id } })).json();
+  const path = `/api/lists/${list.id}`;
+  const privateView = await (await page.request.post(path + "/views", { data: { name: "Private planning", type: "LIST", private: true } })).json();
+  const { list: metadata } = await (await page.request.get(path)).json();
+  const shared = metadata.views.find((view: { type: string }) => view.type === "LIST");
+  const statusId = metadata.statuses[0].id;
+  expect((await page.request.patch(`/api/views/${shared.id}`, { data: { config: { statusIds: [statusId] } } })).ok()).toBeTruthy();
+  await page.request.post("/api/tasks", { data: { listId: list.id, statusId, name: "Visible public task" } });
+  await page.request.post("/api/tasks", { data: { listId: list.id, statusId: metadata.statuses[1].id, name: "Filtered out task" } });
+
+  const baseURL = new URL(page.url()).origin;
+  const peer = await browser.newPage({ baseURL });
+  const visitor = await browser.newPage({ baseURL });
+  try {
+    await login(peer, "maya");
+    await page.goto(`/l/${list.id}?view=${privateView.id}`);
+    await expect(page.getByRole("button", { name: "Private planning", exact: true })).toHaveClass(/border-cu-purple/);
+    await page.getByRole("button", { name: "Manage current view" }).click();
+    await page.getByRole("button", { name: "Share with teammates" }).click();
+    await page.getByRole("checkbox", { name: "Maya Chen", exact: true }).check();
+    await page.getByRole("button", { name: "Save view access" }).click();
+    await expect(page.getByRole("button", { name: "Save view access" })).toBeDisabled();
+    await peer.goto(`/l/${list.id}?view=${privateView.id}`);
+    await expect(peer.getByRole("button", { name: "Private planning", exact: true })).toBeVisible();
+    expect((await peer.request.patch(`/api/views/${privateView.id}`, { data: { name: "Changed" } })).status()).toBe(404);
+    await page.getByRole("checkbox", { name: "Maya Chen", exact: true }).uncheck();
+    await page.getByRole("button", { name: "Save view access" }).click();
+    await expect(page.getByRole("button", { name: "Save view access" })).toBeDisabled();
+    await peer.reload();
+    await expect(peer.getByRole("button", { name: "Private planning", exact: true })).toHaveCount(0);
+
+    await page.goto(`/l/${list.id}?view=${shared.id}`);
+    await page.getByRole("button", { name: "Manage current view" }).click();
+    await page.getByRole("button", { name: "Public view link", exact: true }).click();
+    await page.getByRole("button", { name: "Enable public view link" }).click();
+    const link = page.getByRole("textbox", { name: "Public view URL" });
+    await expect(link).toBeVisible();
+    const url = await link.inputValue();
+    await visitor.goto(url);
+    await expect(visitor.getByText("Visible public task", { exact: true })).toBeVisible();
+    await expect(visitor.getByText("Filtered out task", { exact: true })).toHaveCount(0);
+    const publicPath = "/api/public/views/" + new URL(url).pathname.split("/").at(-1);
+    const data = await (await visitor.request.get(publicPath)).json();
+    expect(data.tasks[0]).not.toHaveProperty("description");
+    expect(data.tasks[0]).not.toHaveProperty("assignees");
+    await page.getByRole("button", { name: "Revoke public view link" }).click();
+    await expect(link).toHaveCount(0);
+    expect((await visitor.request.get(publicPath)).status()).toBe(404);
+  } finally {
+    await peer.close();
+    await visitor.close();
+  }
+});
